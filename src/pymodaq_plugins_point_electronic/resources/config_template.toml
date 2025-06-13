@@ -1,0 +1,23 @@
+title = 'this is the configuration file of the plugin XXX'
+
+[REVOLON]
+
+[REVOLON.connection]
+IP = "188.24.0.85"
+connection_type = "LAN"
+ports = [7701, 7702, 7703, 7704, 7705]
+dll_path = "C:\\Users\\adteurtrie\\travail\\vscodes\\pymodaq_plugins_point_electronic\\src\\pymodaq_plugins_point_electronic\\hardware"
+
+[REVOLON.basic_scan]
+
+# flyback parameters
+flyback_steps = 256
+flyback_line_step_time = "10 ns"
+flyback_line_start_delay = "400 us"
+flyback_line_prescan_pixels = 10
+flyback_frame_step_time = "20 ns"
+flyback_frame_prescan_lines = 0
+
+# Channel parameters
+channels = ["a_fast_a"]
+dtypes = ["u16"]
