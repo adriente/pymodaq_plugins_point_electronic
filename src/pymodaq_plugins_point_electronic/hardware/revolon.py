@@ -8,8 +8,12 @@ from pymodaq_plugins_point_electronic.hardware import revolon_utils as ru
 from pint import Quantity
 import numpy as np
 from threading import Thread
+from pymodaq_utils.logger import set_logger, get_module_name
+import sys
 
 import time
+
+logger = set_logger(get_module_name(__file__))
 
 class ScanControllerConfig :
 
@@ -21,58 +25,66 @@ class ScanControllerConfig :
                             'counter' : sc.CHANNEL_SOURCE_COUNTER,
                             'ecl_counter' : sc.CHANNEL_SOURCE_ECL_COUNTER}
     _acceptable_dtypes = {'invalid' : sc.CHANNEL_DATATYPE_INVALID,
-                          'u8' : sc.CHANNEL_DATATYPE_U8,
-                          'u16' : sc.CHANNEL_DATATYPE_U16,
-                          'u32' : sc.CHANNEL_DATATYPE_U32}
+                          'uint8' : sc.CHANNEL_DATATYPE_U8,
+                          'uint16' : sc.CHANNEL_DATATYPE_U16,
+                          'uint32' : sc.CHANNEL_DATATYPE_U32}
 
     def __init__(self):
         self.config = Config()
         self.time_scale_converter = ru.TimeScaleConverter()
+        self.channels = []
+        self.dtypes = []
+        self.flyback_steps = 0
+        self.flyback_line_step_time = '0s'
+        self.flyback_line_start_delay = '0s'
+        self.flyback_line_prescan_pixels = 0
+        self.flyback_frame_step_time = '0s'
+        self.flyback_frame_prescan_lines = 0 
 
     def load_profile(self, profile_name : str = 'basic_scan') : 
         # flyback parameters
-        self.flyback_steps = self.config['REVOLON'][profile_name]['flyback_steps']
+        self.flyback_steps = self.config['REVOLON']['scan_profiles'][profile_name]['flyback_steps']
         self.flyback_line_step_time = self.time_scale_converter.from_quantity_to_int(
             self.config['REVOLON'][profile_name]['flyback_line_step_time']
             )
         self.flyback_line_start_delay = self.time_scale_converter.from_quantity_to_int(
             self.config['REVOLON'][profile_name]['flyback_line_start_delay']
             )
-        self.flyback_line_prescan_pixels = self.config['REVOLON'][profile_name]['flyback_line_prescan_pixels']
+        self.flyback_line_prescan_pixels = self.config['REVOLON']['scan_profiles'][profile_name]['flyback_line_prescan_pixels']
         self.flyback_frame_step_time = self.time_scale_converter.from_quantity_to_int(
             self.config['REVOLON'][profile_name]['flyback_frame_step_time']
             )
-        self.flyback_frame_prescan_lines = self.config['REVOLON'][profile_name]['flyback_frame_prescan_lines']
+        self.flyback_frame_prescan_lines = self.config['REVOLON']['scan_profiles'][profile_name]['flyback_frame_prescan_lines']
         self.load_channels(profile_name)
 
     def load_channels(self, profile_name : str = 'basic_scan') :
-        self.channels = [] 
-        try : 
-            for ch in self.config['REVOLON'][profile_name]['channels'] :
-                assert ch in self._acceptable_channels.keys(), f"{ch} is an invalid channel type, check ScanControllerConfig"
+        self.channels = []
+        try :
+            for ch in self.config['REVOLON']['scan_profiles'][profile_name]['channels'] :
+                assert ch in self._acceptable_channels, f"{ch} is an invalid channel type, check ScanControllerConfig"
                 self.channels.append(self._acceptable_channels[ch])
         except AssertionError : 
-            print('Only the following channels were loaded : \n')
-            print('\n'.join('{}'.format(*k) for k in self.channels))
+            ch_string = '\n'.join('{}'.format(*k) for k in self.channels)
+            logger.info('Only the following channels were loaded : %s .',ch_string)
 
         self.dtypes = []
-        try : 
-            for dt in self.config['REVOLON'][profile_name]['dtypes'] : 
-                assert dt in self._acceptable_dtypes.keys(), f"{dt} is an invalid channel type, check ScanControllerConfig"
+        try :
+            for dt in self.config['REVOLON']['scan_profiles'][profile_name]['dtypes'] : 
+                assert dt in self._acceptable_dtypes, f"{dt} is an invalid channel type, check ScanControllerConfig"
                 self.dtypes.append(self._acceptable_dtypes[dt])
         except AssertionError : 
-            print('Only the following channels were loaded : \n')
-            print('\n'.join('{}'.format(*k) for k in self.channels))
+            ch_string = '\n'.join('{}'.format(*k) for k in self.channels)
+            logger.info('Only the following channels were loaded : %s .',ch_string)
 
         assert len(self.channels) == len(self.dtypes), f"dtypes and channels don't match.\nChannels : {self.channels}, Dtypes : {self.dtypes}"
 
 
-class  ScanController : 
-    def __init__(self) : 
+class ScanController :
+    def __init__(self) :
         self.config = ScanControllerConfig()
         self.dll = self.load_dll()
-        
-        self.config.load_profile('basic_scan')
+        self._scan_profile = 'basic_scan'
+        self.config.load_profile(self.scan_profile)
         # Properties
         self._image_width = 1024 # pixels
         self._image_height = 1024 # pixels
@@ -83,91 +95,82 @@ class  ScanController :
         # self.thread_called = 0
 
         # Advanced settings
-        self._DAC_x_step, self._DAC_offset_x, self._DAC_offset_y = ru.calculate_DAC_increment(
+        self._dac_x_step, self._dac_offset_x, self._dac_offset_y = ru.calculate_dac_increment(
             self._image_width,
             self._image_height,
             self.config.flyback_line_prescan_pixels,
             self.config.flyback_frame_prescan_lines
                                                       )
-        self._DAC_y_step = self._DAC_x_step
+        self._dac_y_step = self._dac_x_step
         
-        self.eventHandles = (c_void_p * 4)()
+        self.event_handles = (c_void_p * 4)()
 
-        self._DAC_x_off_pos, self._DAC_y_off_pos = (c_uint16(0),c_uint16(0))
-        self.dll.GetScanOffPosition(byref(self._DAC_x_off_pos), byref(self._DAC_y_off_pos))
-        self._x_position, self._y_position = ru.DAC_to_pixel(
-            self._DAC_x_off_pos,
-            self._DAC_y_off_pos,
-            self._DAC_x_step,
-            self._DAC_offset_x,
-            self._DAC_offset_y
+        self._dac_x_off_pos, self._dac_y_off_pos = (c_uint16(0),c_uint16(0))
+        self.dll.GetScanOffPosition(byref(self._dac_x_off_pos), byref(self._dac_y_off_pos))
+        self._x_position, self._y_position = ru.dac_to_pixel(
+            self._dac_x_off_pos,
+            self._dac_y_off_pos,
+            self._dac_x_step,
+            self._dac_offset_x,
+            self._dac_offset_y
             )
 
-
     def load_dll(self) : 
-        if op_sys == "win32" or  op_sys == "win64":
+        if op_sys in ("win32","win64"):
             os.add_dll_directory(self.config.config['REVOLON']['connection']['dll_path'])
             if p.architecture()[0] == "32bit":
                 scan_control_lib = cdll.LoadLibrary("DISS6Control32.dll")
             elif p.architecture()[0] == "64bit":
                 scan_control_lib = cdll.LoadLibrary("DISS6Control64.dll")
-        elif op_sys == "linux" or op_sys == "linux2":
+        elif op_sys in ("linux","linux2"):
             scan_control_lib = cdll.LoadLibrary("libdiss6control.so")
         elif op_sys == "darwin":
             scan_control_lib = cdll.LoadLibrary("libdiss6control.dylib")
-        else : 
+        else :
             raise FileNotFoundError('There is no dll corresponding to your OS.')
         return scan_control_lib
 
     def connect(self) :
-        if self.config.config['REVOLON']['connection']['connection_type'] == "USB": 
-            returnCode = self.dll.InitUSB(None)
-        if self.config.config['REVOLON']['connection']['connection_type'] == "LAN":
+        if self.config.config['REVOLON']['connection']['connection_type'] == "USB":
+            return_code = self.dll.InitUSB(None)
+        elif self.config.config['REVOLON']['connection']['connection_type'] == "LAN":
             addr_byte = bytes(self.config.config['REVOLON']['connection']['IP'], 'ascii') 
-            returnCode = self.dll.InitTCP(create_string_buffer(addr_byte), 7701, 7702, 7703, 7704, 7705)
-        if returnCode != sc.SUCCESS:
-            print(f"Init failed (return code {returnCode:08X})!")
+            return_code = self.dll.InitTCP(create_string_buffer(addr_byte), 7701, 7702, 7703, 7704, 7705)
+        else :
+            return_code = sc.CANNOT_LOCATE_DEVICE
+        if return_code != sc.SUCCESS:
+            logger.info("Init failed with return code %08X!", return_code)
             msg = create_unicode_buffer(255)
             self.dll.GetLastErrorMessage(msg, 255)
-            exit(msg.value)
-        return returnCode
+            sys.exit(msg.value)
+        return return_code
 
     def close(self) : 
         self.dll.AbortAllScans(0)
-        returnCode = self.dll.UnInit()
-        if returnCode == sc.SUCCESS : 
-            print("Successfully unloaded the Revolon scan box.")
-        else : 
-            print("Something went wrong when unloading the Revolon scan box.")
-            print(f"UnInit failed (return code {returnCode:08X})!")
+        for eh in self.event_handles:
+            if eh != 0:
+                self.dll.SysDestroyEvent(eh)
+        return_code = self.dll.UnInit()
+        if return_code == sc.SUCCESS :
+            logger.info("Successfully unloaded the Revolon scan box.")
+        else :
+            logger.info("UnInit failed with return code %08X!",return_code)
 
     ############
     # Scanning #
     ############
 
     def wait_for_acq(self) :
-        while 1 : 
-            ret = self.dll.SysWaitForMultipleEvents(byref(self.eventHandles), len(self.eventHandles), False, 5000, byref(self._status)) 
+        while True :
+            self.dll.SysWaitForMultipleEvents(byref(self.event_handles), len(self.event_handles), False, 5000, byref(self._status))
             if self._status.value == 0 :
                 pass
-            if self._status.value == 1 : 
+            if self._status.value == 1 :
                 return True
             if self._status.value == 2 :
                 return False
-            
-    # def wait_for_acq(self) :
-    #     while 1 : 
-    #         ret = self.dll.SysWaitForMultipleEvents(byref(self.eventHandles), len(self.eventHandles), False, 5000, byref(self._status)) 
-    #         if self._status.value == 0 :
-    #             pass
-    #         if self._status.value == 1 : 
-    #             return 1
-    #         if self._status.value == 2 and not(self.full) :
-    #             return 2
-            
-    # def update_status(self) : 
-    #     ret = self.dll.SysWaitForMultipleEvents(byref(self.eventHandles), len(self.eventHandles), False, 5000, byref(self._status))
-    #     return self._status.value
+            if self._status.value == 3 :
+                return False
 
     def start(self,
               num_frame = 0,
@@ -176,79 +179,35 @@ class  ScanController :
               x_end : int = None,
               y_end : int = None) : 
         self.prepare_acquisition(num_frame,x_start,y_start,x_end,y_end)
-        # self.pixelCount = c_uint32(self.image_height * self.image_height)
-        # self.pixelOffset = c_uint32()
-        # self.data_status = c_uint32()
-        # self.t = Thread(target=self.acquired_data)
-        # Start acquisition
-        returnCode = self.dll.StartScanJob(self.hScanJob, sc.ABORT_SCAN_IMMEDIATELY)
-        if returnCode != sc.SUCCESS: exit(f"StartScanJob failed! Error code: {returnCode:08X}")
-        # t = Thread(target=self.wait_for_acq)
-        # t.start()
-        # pixelCount = c_uint32(self.image_height*self.image_width)
-        # pixelOffset = c_uint32()
-        # status = c_uint32()
-        # returnCode = sc.ReadChannelData(self.hScanJob,
-        #                                 byref(self.scanFrameBufferArray),
-        #                                 byref(pixelCount),
-        #                                 sc.READ_FLAG_USE_PIXEL_OFFSET,
-        #                                 None,
-        #                                 byref(pixelOffset),
-        #                                 byref(status))
-        # if returnCode != sc.SUCCESS: exit(f"ReadChannelData failed! Error code: {returnCode:08X}")
-
-    # def async_acquired_data(self) :
-    #     if self.full and not(self.thread_called) :
-    #         t = Thread(target=self.acquired_data)
-    #         t.start()
-    #         self.thread_called = 1
-    #         print('I am called in')
-
-    #     print('I am called')
-    #     return self.data
-        
-
-    def acquired_data(self) :
-        pixelCount = c_uint32(self.image_height*self.image_width)
-        pixelOffset = c_uint32()
-        status = c_uint32() 
-        returnCode = self.dll.ReadChannelData(self.hScanJob, byref(self.scanFrameBufferArray), byref(pixelCount), sc.READ_FLAG_USE_PIXEL_OFFSET, None, byref(pixelOffset), byref(status))
-        if returnCode != sc.SUCCESS: exit(f"ReadChannelData failed! Error code: {returnCode:08X}")
-        # time.sleep(0.01)
-        # check status
-        # print("Read ", pixelCount.value, " at offset ", pixelOffset.value)
-        # print(f'box status {self._status}')
-        # print(f'data status {self.data_status}')
-        # print(self.data.sum())
-        # if (status.value == sc.READ_STATUS_DATA_LOSS):
-        #     print("Data loss!") 
+        return_code = self.dll.StartScanJob(self.h_scan_job, sc.ABORT_SCAN_IMMEDIATELY)
+        if return_code != sc.SUCCESS: 
+            sys.exit("StartScanJob failed! Error code: %08X",return_code)
     
-        # if (status.value == sc.READ_STATUS_BUFFER_EMPTY):
-        #     break
-                # print("Empty buffer")
-        
-        return status, pixelCount, pixelOffset, np.frombuffer(self.scanFrameBuffer, dtype=np.uint16)
+    def read_data(self) :
+        pixel_count = c_uint32(self.image_height*self.image_width)
+        pixel_offset = c_uint32()
+        status = c_uint32()
+        return_code = self.dll.ReadChannelData(self.h_scan_job,
+                                               byref(self.scan_frame_buffer_array),
+                                               byref(pixel_count),
+                                               sc.READ_FLAG_USE_PIXEL_OFFSET,
+                                               None,
+                                               byref(pixel_offset),
+                                               byref(status))
+        if return_code != sc.SUCCESS:
+            sys.exit("ReadChannelData failed! Error code: %08X",return_code)
+        data_list = self.build_data_list()
+        return status, data_list
     
-    # def acquired_data(self) :
-    #     pixelCount = c_uint32(self.image_height*self.image_width)
-    #     pixelOffset = c_uint32()
-    #     status = c_uint32()
-    #     returnCode = self.dll.ReadChannelData(self.hScanJob, byref(self.scanFrameBufferArray), byref(pixelCount), sc.READ_FLAG_USE_PIXEL_OFFSET, None, byref(pixelOffset), byref(status))
-    #     if returnCode != sc.SUCCESS: exit(f"ReadChannelData failed! Error code: {returnCode:08X}")
-    #     # time.sleep(0.01)
-    #     # check status
-    #     # print("Read ", pixelCount.value, " at offset ", pixelOffset.value)
-    #     # print(f'box status {self._status}')
-    #     # print(f'data status {self.data_status}')
-    #     # print(self.data.sum())
-    #     if (status.value == sc.READ_STATUS_DATA_LOSS):
-    #         print("Data loss!") 
-
-    #     if (status.value == sc.READ_STATUS_BUFFER_EMPTY):
-    #         self.full = 0
-    #         # print("Empty buffer")
-        
-    #     return pixelCount, pixelOffset, np.frombuffer(self.scan
+    def build_data_list(self) : 
+        data_list = []
+        for i, scan_frame_buffer in enumerate(self.scan_frame_buffers) :
+            dtype_name = self.config.config['REVOLON']['scan_profiles'][self.scan_profile]['dtypes'][i]
+            dtype = getattr(np,dtype_name)
+            data_list.append(
+                np.frombuffer(scan_frame_buffer, dtype = dtype)
+            )
+        return data_list
 
     def prepare_acquisition(self,
                             num_frame,
@@ -259,134 +218,143 @@ class  ScanController :
         if x_start and y_start and x_end and y_end :
             assert (x_end - x_start) > 0, "There is something wrong with ROI selection"
             assert (y_end - y_start) > 0, "There is something wrong with ROI selection" 
-            scanPixels = (x_end - x_start) * (y_end - y_start)
+            scan_pixels = (x_end - x_start) * (y_end - y_start)
         else :
-            scanPixels = self.image_height * self.image_width
+            scan_pixels = self.image_height * self.image_width
 
-        scan_tuple = (sc.ChannelInfo_t(sc.ChannelId_t(ch, 0),0,self.config.dtypes[i]) for i,ch in enumerate(self.config.channels))
-        scanChannels = (sc.ChannelInfo_t * len(self.config.channels))(*scan_tuple)
-        self.scanFrameBuffer = (c_uint16 * scanPixels)()
-        self.scanFrameBufferArray = (c_void_p * 1)(addressof(self.scanFrameBuffer))
+        scan_tuple = (sc.ChannelInfo_t(sc.ChannelId_t(ch, i),0,self.config.dtypes[i]) for i,ch in enumerate(self.config.channels))
+        scan_channels = (sc.ChannelInfo_t * len(self.config.channels))(*scan_tuple)
+        self.scan_frame_buffers = tuple(((c_uint16 * scan_pixels)() for _ in scan_channels))
+        addr_tuple = (addressof(sfb) for sfb in self.scan_frame_buffers) 
+        self.scan_frame_buffer_array = (c_void_p * len(scan_channels))(*addr_tuple)
 
         # Init job
-        self.hScanJob = c_uint16(0)
-        returnCode = self.dll.CreateImageScanJob(len(scanChannels), byref(scanChannels), byref(self.hScanJob))
-        if returnCode != sc.SUCCESS: exit(f"CreateImageScanJob failed! Error code: {returnCode:08X}")
+        self.h_scan_job = c_uint16(0)
+        return_code = self.dll.CreateImageScanJob(len(scan_channels), byref(scan_channels), byref(self.h_scan_job))
+        if return_code != sc.SUCCESS:
+            sys.exit("CreateImageScanJob failed! Error code: %08X", return_code)
         # Image geometry
         if x_start and y_start and x_end and y_end :
-            roi_DAC_offset_x, roi_DAC_offset_y = ru.pixel_to_DAC(pixel_x=x_start,
+            roi_dac_offset_x, roi_dac_offset_y = ru.pixel_to_dac(pixel_x=x_start,
                                                                  pixel_y=y_start,
-                                                                 DAC_offset_x=self._DAC_offset_x,
-                                                                 DAC_offset_y=self._DAC_offset_y,
-                                                                 DAC_increment=self._DAC_x_step)
-            returnCode = self.dll.SetImageGeometry(self.hScanJob,
+                                                                 dac_offset_x=self._dac_offset_x,
+                                                                 dac_offset_y=self._dac_offset_y,
+                                                                 dac_increment=self._dac_x_step)
+            return_code = self.dll.SetImageGeometry(self.h_scan_job,
                                                    x_end - x_start,
                                                    y_end - y_start,
-                                                   roi_DAC_offset_x,
-                                                   roi_DAC_offset_y,
-                                                   self._DAC_x_step,
-                                                   self._DAC_y_step,
+                                                   roi_dac_offset_x,
+                                                   roi_dac_offset_y,
+                                                   self._dac_x_step,
+                                                   self._dac_y_step,
                                                    self.config.flyback_line_prescan_pixels,
                                                    self.config.flyback_frame_prescan_lines)
         else :
-            returnCode = self.dll.SetImageGeometry(self.hScanJob,
+            return_code = self.dll.SetImageGeometry(self.h_scan_job,
                                             self.image_width,
                                             self.image_height,
-                                            self._DAC_offset_x,
-                                            self._DAC_offset_y,
-                                            self._DAC_x_step,
-                                            self._DAC_y_step,
+                                            self._dac_offset_x,
+                                            self._dac_offset_y,
+                                            self._dac_x_step,
+                                            self._dac_y_step,
                                             self.config.flyback_line_prescan_pixels,
                                             self.config.flyback_frame_prescan_lines)
-        if returnCode != sc.SUCCESS: exit(f"SetImageGeometry failed! Error code: {returnCode:08X}")
+        if return_code != sc.SUCCESS:
+            sys.exit("SetImageGeometry failed! Error code: %08X",return_code)
 
         # Flyback parameters
-        returnCode = self.dll.SetBeamReturnTiming(self.hScanJob,
+        return_code = self.dll.SetBeamReturnTiming(self.h_scan_job,
                                             self.config.flyback_steps,
                                             self.config.flyback_line_step_time,
                                             self.config.flyback_frame_step_time)
-        if returnCode != sc.SUCCESS: exit(f"SetBeamReturnTiming failed! Error code: {returnCode:08X}")
+        if return_code != sc.SUCCESS:
+            sys.exit("SetBeamReturnTiming failed! Error code: %08X",return_code)
 
-        returnCode = self.dll.SetLineStartDelay(self.hScanJob,
+        return_code = self.dll.SetLineStartDelay(self.h_scan_job,
                                           self.config.flyback_line_start_delay)
-        if returnCode != sc.SUCCESS: exit(f"SetLineStartDelay failed! Error code: {returnCode:08X}")
+        if return_code != sc.SUCCESS:
+            sys.exit("SetLineStartDelay failed! Error code: %08X",return_code)
 
         # Dwell time
-        returnCode = self.dll.SetAcquisitionTime(self.hScanJob, self._dwell_time_int)
-        if returnCode != sc.SUCCESS: exit(f"SetAcquisitionTime failed! Error code: {returnCode:08X}")
+        return_code = self.dll.SetAcquisitionTime(self.h_scan_job, self._dwell_time_int)
+        if return_code != sc.SUCCESS:
+            sys.exit("SetAcquisitionTime failed! Error code: %08X",return_code)
 
         # Frame count
-        returnCode = self.dll.SetFrameCount(self.hScanJob, num_frame)
-        if returnCode != sc.SUCCESS: exit(f"SetFrameCount failed! Error code: {returnCode:08X}")
+        return_code = self.dll.SetFrameCount(self.h_scan_job, num_frame)
+        if return_code != sc.SUCCESS:
+            sys.exit("SetFrameCount failed! Error code: %08X",return_code)
 
-        self.dll.SetKeepInternalScanEnabled(self.hScanJob, True)
+        self.dll.SetKeepInternalScanEnabled(self.h_scan_job, True)
 
         for i in range(4):
-            self.eventHandles[i] = self.dll.SysCreateEvent(False, False)
-        self.dll.SetEventScanJobStarted(self.hScanJob, self.eventHandles[0]);
-        self.dll.SetEventDataReady(self.hScanJob, self.eventHandles[1]);
-        self.dll.SetEventScanJobFinished(self.hScanJob, self.eventHandles[2]);
-        self.dll.SetEventScanJobAborted(self.hScanJob, self.eventHandles[3]);
+            self.event_handles[i] = self.dll.SysCreateEvent(False, False)
+        self.dll.SetEventScanJobStarted(self.h_scan_job, self.event_handles[0])
+        self.dll.SetEventDataReady(self.h_scan_job, self.event_handles[1])
+        self.dll.SetEventScanJobFinished(self.h_scan_job, self.event_handles[2])
+        self.dll.SetEventScanJobAborted(self.h_scan_job, self.event_handles[3])
 
     def stop_after_frame(self) : 
-        returnCode = self.dll.StopScanJob(self.hScanJob, sc.ABORT_SCAN_AFTER_FRAME)
-        if returnCode != sc.SUCCESS: exit(f"StopScanJob failed! Error code: {returnCode:08X}")
+        return_code = self.dll.StopScanJob(self.h_scan_job, sc.ABORT_SCAN_AFTER_FRAME)
+        if return_code != sc.SUCCESS:
+            sys.exit("StopScanJob failed! Error code: %08X",return_code)
 
     def stop_immediately(self) : 
-        returnCode = self.dll.StopScanJob(self.hScanJob, sc.ABORT_SCAN_IMMEDIATELY)
-        if returnCode != sc.SUCCESS: exit(f"StopScanJob failed! Error code: {returnCode:08X}")
+        return_code = self.dll.StopScanJob(self.h_scan_job, sc.ABORT_SCAN_IMMEDIATELY)
+        if return_code != sc.SUCCESS:
+            sys.exit("StopScanJob failed! Error code: %08X",return_code)
 
     ################
     # Moving probe #
     ################
 
-    def _set_DAC_x_scan_pos(self, DAC_x_val : c_uint16) :
-        self.dll.SetScanOffPosition(DAC_x_val, self._DAC_y_off_pos)
+    def _set_dac_x_scan_pos(self, dac_x_val : c_uint16) :
+        self.dll.SetScanOffPosition(dac_x_val, self._dac_y_off_pos)
 
-    def _set_DAC_y_scan_pos(self, DAC_y_val : c_uint16) : 
-        self.dll.SetScanOffPosition(self._DAC_x_off_pos, DAC_y_val)
+    def _set_dac_y_scan_pos(self, dac_y_val : c_uint16) :
+        self.dll.SetScanOffPosition(self._dac_x_off_pos, dac_y_val)
 
-    def _get_DAC_scan_pos(self) : 
-        self.dll.GetScanOffPosition(byref(self._DAC_x_off_pos), byref(self._DAC_y_off_pos))
-        return self._DAC_x_off_pos, self._DAC_y_off_pos
+    def _get_dac_scan_pos(self) : 
+        self.dll.GetScanOffPosition(byref(self._dac_x_off_pos), byref(self._dac_y_off_pos))
+        return self._dac_x_off_pos, self._dac_y_off_pos
     
     @property
     def x_position(self) :
-        DAC_x, DAC_y = self._get_DAC_scan_pos() 
-        self._x_positon, y = ru.DAC_to_pixel(DAC_x=DAC_x,
-                               DAC_y=DAC_y,
-                               DAC_increment=self._DAC_x_step,
-                               DAC_offset_x=self._DAC_offset_x,
-                               DAC_offset_y=self._DAC_offset_y)
+        dac_x, dac_y = self._get_dac_scan_pos() 
+        self._x_positon, _ = ru.dac_to_pixel(dac_x=dac_x,
+                               dac_y=dac_y,
+                               dac_increment=self._dac_x_step,
+                               dac_offset_x=self._dac_offset_x,
+                               dac_offset_y=self._dac_offset_y)
         return self._x_positon
     
     @x_position.setter
     def x_position(self,value : int) : 
-        DAC_x, DAC_y = ru.pixel_to_DAC(value,
+        dac_x, _ = ru.pixel_to_dac(value,
                                        self._y_position,
-                                       self._DAC_x_step,
-                                       self._DAC_offset_x,
-                                       self._DAC_offset_y)
-        self._set_DAC_x_scan_pos(DAC_x)
+                                       self._dac_x_step,
+                                       self._dac_offset_x,
+                                       self._dac_offset_y)
+        self._set_dac_x_scan_pos(dac_x)
 
     @property
     def y_position(self) :
-        DAC_x, DAC_y = self._get_DAC_scan_pos() 
-        x, self._y_position = ru.DAC_to_pixel(DAC_x=DAC_x,
-                               DAC_y=DAC_y,
-                               DAC_increment=self._DAC_x_step,
-                               DAC_offset_x=self._DAC_offset_x,
-                               DAC_offset_y=self._DAC_offset_y)
+        dac_x, dac_y = self._get_dac_scan_pos() 
+        _, self._y_position = ru.dac_to_pixel(dac_x=dac_x,
+                               dac_y=dac_y,
+                               dac_increment=self._dac_x_step,
+                               dac_offset_x=self._dac_offset_x,
+                               dac_offset_y=self._dac_offset_y)
         return self._y_position
 
     @y_position.setter
     def y_position(self,value : int) : 
-        DAC_x, DAC_y = ru.pixel_to_DAC(self._x_position,
+        _, dac_y = ru.pixel_to_dac(self._x_position,
                                        value,
-                                       self._DAC_x_step,
-                                       self._DAC_offset_x,
-                                       self._DAC_offset_y)
-        self._set_DAC_y_scan_pos(DAC_y)
+                                       self._dac_x_step,
+                                       self._dac_offset_x,
+                                       self._dac_offset_y)
+        self._set_dac_y_scan_pos(dac_y)
 
 
     ##############
@@ -394,95 +362,70 @@ class  ScanController :
     ##############
 
     @property
-    def image_width(self) : 
+    def scan_profile(self) -> str :
+        return self._scan_profile
+
+    @scan_profile.setter
+    def scan_profile(self, value : str) :
+        assert value in self.config.config['Revolon']['scan_profiles']("The selected profile %s isn't part of the avalaible profiles : %s",
+                                                                       value,
+                                                                       list(self.config.config['Revolon']['scan_profiles'].keys()))
+        self._scan_profile = value
+        self.config.load_profile(value)
+
+    @property
+    def image_width(self) :
         return self._image_width
-    
+
     @image_width.setter
-    def image_width(self,value : int) : 
-        try : 
-            self._DAC_x_step, self._DAC_offset_x, self._DAC_offset_y = ru.calculate_DAC_increment(
+    def image_width(self,value : int) :
+        try :
+            self._dac_x_step, self._dac_offset_x, self._dac_offset_y = ru.calculate_dac_increment(
                 value,
                 self._image_height,
                 self.config.flyback_line_prescan_pixels,
                 self.config.flyback_frame_prescan_lines
                                                       )
-            self._DAC_y_step = self._DAC_x_step
+            self._dac_y_step = self._dac_x_step
             self._image_width = value
-        except AssertionError : 
-            print("The image width in pixel could not be changed. Check DAC offsets")
+        except AssertionError :
+            logger.info("The image width in pixel could not be changed. Check dac offsets")
 
     @property
-    def image_height(self) : 
+    def image_height(self) :
         return self._image_height
-    
+
     @image_height.setter
     def image_height(self, value : int) :
         try :
-            self._DAC_y_step, self._DAC_offset_x, self._DAC_offset_y = ru.calculate_DAC_increment(
+            self._dac_y_step, self._dac_offset_x, self._dac_offset_y = ru.calculate_dac_increment(
                 self._image_width,
                 value,
                 self.config.flyback_line_prescan_pixels,
                 self.config.flyback_frame_prescan_lines
                                                           )
-            self._DAC_x_step = self._DAC_y_step
+            self._dac_x_step = self._dac_y_step
             self._image_height = value
         except AssertionError : 
-            print("The image height in pixel could not be changed. Check DAC offsets")
+            print("The image height in pixel could not be changed. Check dac offsets")
 
     @property
     def dwell_time(self) : 
         return self._dwell_time.to('ns')
-    
+
     @dwell_time.setter
     def dwell_time(self, value) : 
         ns_value = value.to('ns').magnitude
         self._dwell_time_int = ns_value//10
         self._dwell_time = value.to('ns')
 
-    # @property
-    # def status(self) : 
-    #     return self._status.value
-
-    #####
-    # 
-
 if __name__ == '__main__' : 
     Revolon = ScanController()
     Revolon.connect()
-    # scan_tuple = (sc.ChannelInfo_t(sc.ChannelId_t(1, 0),0,2),)
-    # scanChannels = (sc.ChannelInfo_t * len([1]))(*scan_tuple)
-    # hScanJob = c_uint16(0)
-    # returnCode1 = Revolon.dll.CreateImageScanJob(len(scanChannels), byref(scanChannels), byref(hScanJob))
-    # if returnCode1 != sc.SUCCESS: exit(f"CreateImageScanJob failed! Error code: {returnCode1:08X}")
-    # x = int(input('x ? : '))
-    # y = int(input('y ? : '))
-    # off_x = int(input('off x ? : '))
-    # off_y = int(input('off_y ? : '))
-    # stp_x = int(input('stp x ? : '))
-    # stp_y = int(input('off y ? : '))
-    # fpx = int(input('fpx ? : '))
-    # fpl = int(input('fpl ? : '))
-    # returnCode = Revolon.dll.SetImageGeometry(hScanJob,
-    #                                      x,
-    #                                      y,
-    #                                      off_x,
-    #                                      off_y,
-    #                                      stp_x,
-    #                                      stp_y,
-    #                                      fpx,
-    #                                      fpl)
-    # if returnCode != sc.SUCCESS: exit(f"SetImageGeometry failed! Error code: {returnCode:08X}")
-    # print(f"SetImageGeometry failed! Error code: {returnCode:08X}")
-
-
     x = int(input('x ? : '))
     y = int(input('y ? : '))
     Revolon.image_height = y
     Revolon.image_width = x
     Revolon.start(1)
     time.sleep(5.0)
-    dt1 = Revolon.acquired_data()
-   
-            
-    # print('Stopping')
-    # Revolon.stop_immediately()
+    dt1 = Revolon.read_data()

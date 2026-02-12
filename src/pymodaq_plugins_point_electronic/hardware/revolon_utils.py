@@ -1,7 +1,7 @@
 from pint import Quantity
 from pint import UnitRegistry
 from ctypes import *
-# Returns in DAC units the step size in x or y direction for a scan.
+# Returns in dac units the step size in x or y direction for a scan.
 # It is mainly based on the number of pixels in the image
 
 def from_roi_info_to_int_coordinates(roi_info) : 
@@ -13,13 +13,13 @@ def from_roi_info_to_int_coordinates(roi_info) :
     return x_origin, y_origin, x_end, y_end
 
 
-def calculate_DAC_increment(pixel_length_x : int,
+def calculate_dac_increment(pixel_length_x : int,
                             pixel_length_y : int,
                             prescan_x : int,
                             prescan_y : int,
-                            DAC_max_value: int = 65535) :
+                            dac_max_value: int = 65535) :
     r"""
-    Returns the DAC increment value as well as the corresponding DAC offsets for a sawtooth scan. 
+    Returns the dac increment value as well as the corresponding dac offsets for a sawtooth scan. 
     This functions accounts for prescan (flyback) pixels.
     If given a non-square image, it will maximize the number of pixels in the direction with the highest number of pixels.
 
@@ -33,54 +33,54 @@ def calculate_DAC_increment(pixel_length_x : int,
         Number of pixels in the line flyback
     prescan_y : int
         Number of pixels in the frame (to be checked) flyback
-    DAC_max_value : int
-        Maximum value of the DAC. By default 16 bits.
+    dac_max_value : int
+        Maximum value of the dac. By default 16 bits.
 
     Returns
     -------
-    DAC_increment : int
-        Value of the increment per pixel in DAC unit
-    DAC_x_offset : int
-        Value of the line offset in DAC unit
-    DAC_y_offset : int
-        Value of the frame offset in DAC unit
+    dac_increment : int
+        Value of the increment per pixel in dac unit
+    dac_x_offset : int
+        Value of the line offset in dac unit
+    dac_y_offset : int
+        Value of the frame offset in dac unit
     """
     
     if pixel_length_y >= pixel_length_x :  
-        DAC_increment = min(DAC_max_value // (pixel_length_y + prescan_x),
-                            DAC_max_value//(pixel_length_y + prescan_y))
+        dac_increment = min(dac_max_value // (pixel_length_y + prescan_x),
+                            dac_max_value//(pixel_length_y + prescan_y))
 
     else : 
-        DAC_increment = min(DAC_max_value // (pixel_length_x + prescan_x),
-                            DAC_max_value//(pixel_length_x + prescan_y))
+        dac_increment = min(dac_max_value // (pixel_length_x + prescan_x),
+                            dac_max_value//(pixel_length_x + prescan_y))
         
-    DAC_offset_x, DAC_offset_y = prescan_x*DAC_increment, prescan_y*DAC_increment
+    dac_offset_x, dac_offset_y = prescan_x*dac_increment, prescan_y*dac_increment
         
-    return DAC_increment, DAC_offset_x, DAC_offset_y
+    return dac_increment, dac_offset_x, dac_offset_y
 
-def DAC_to_pixel(DAC_x : c_uint16,
-                 DAC_y: c_uint16,
-                 DAC_increment : int,
-                 DAC_offset_x : int,
-                 DAC_offset_y : int,
-                 DAC_max_value: int = 65535) : 
+def dac_to_pixel(dac_x : c_uint16,
+                 dac_y: c_uint16,
+                 dac_increment : int,
+                 dac_offset_x : int,
+                 dac_offset_y : int,
+                 dac_max_value: int = 65535) : 
     r"""
-    Returns x and y coordinates of a scan in pixels from x and y coordinates in DAC unit.
+    Returns x and y coordinates of a scan in pixels from x and y coordinates in dac unit.
 
     Parameters
     ----------
-    DAC_x : int
-        Input x DAC value to be converted to x pixel
-    DAC_y : int
-        Input y DAC value to be converted to y pixel
-    DAC_increment : int
-        DAC increment value of the current scan job
-    DAC_offset_x : int
-        x DAC offset of the current scan job
-    DAC_offset_y : int
-        y DAC offset of the current scan job
-    DAC_max_value : int
-        Maximum value of the DAC. By default 16 bits.
+    dac_x : int
+        Input x dac value to be converted to x pixel
+    dac_y : int
+        Input y dac value to be converted to y pixel
+    dac_increment : int
+        dac increment value of the current scan job
+    dac_offset_x : int
+        x dac offset of the current scan job
+    dac_offset_y : int
+        y dac offset of the current scan job
+    dac_max_value : int
+        Maximum value of the dac. By default 16 bits.
 
     Returns
     -------
@@ -89,46 +89,46 @@ def DAC_to_pixel(DAC_x : c_uint16,
     pixel_y : int
         y position in pixel
     """
-    DAC_x_val = within_limits(DAC_x.value - DAC_offset_x, lower=0, upper=DAC_max_value)
-    DAC_y_val = within_limits(DAC_y.value - DAC_offset_y, lower=0, upper=DAC_max_value)
-    pixel_x = DAC_x_val//DAC_increment
-    pixel_y = DAC_y_val//DAC_increment
+    dac_x_val = within_limits(dac_x.value - dac_offset_x, lower=0, upper=dac_max_value)
+    dac_y_val = within_limits(dac_y.value - dac_offset_y, lower=0, upper=dac_max_value)
+    pixel_x = dac_x_val//dac_increment
+    pixel_y = dac_y_val//dac_increment
     return pixel_x, pixel_y
 
-def pixel_to_DAC(pixel_x : int,
+def pixel_to_dac(pixel_x : int,
                  pixel_y : int,
-                 DAC_increment : int,
-                 DAC_offset_x : int,
-                 DAC_offset_y : int,
-                 DAC_max_value : int = 65535) : 
+                 dac_increment : int,
+                 dac_offset_x : int,
+                 dac_offset_y : int,
+                 dac_max_value : int = 65535) : 
     r"""
-    Returns x and y coordinates of a scan in pixels from x and y coordinates in DAC unit.
+    Returns x and y coordinates of a scan in pixels from x and y coordinates in dac unit.
 
     Parameters
     ----------
     pixel_x : int
-        Input x pixel value to be converted to x DAC unit
+        Input x pixel value to be converted to x dac unit
     pixel_y : int
-        Input y pixel value to be converted to y DAC unit
-    DAC_increment : int
-        DAC increment value of the current scan job
-    DAC_offset_x : int
-        x DAC offset of the current scan job
-    DAC_offset_y : int
-        y DAC offset of the current scan job
-    DAC_max_value : int
-        Maximum value of the DAC. By default 16 bits.
+        Input y pixel value to be converted to y dac unit
+    dac_increment : int
+        dac increment value of the current scan job
+    dac_offset_x : int
+        x dac offset of the current scan job
+    dac_offset_y : int
+        y dac offset of the current scan job
+    dac_max_value : int
+        Maximum value of the dac. By default 16 bits.
 
     Returns
     -------
-    DAC_x : c_uint16
-        x position in DAC unit
-    DAC_y : c_uint16
-        y position in DAC unit
+    dac_x : c_uint16
+        x position in dac unit
+    dac_y : c_uint16
+        y position in dac unit
     """
-    DAC_x = within_limits(DAC_offset_x + pixel_x*DAC_increment, upper = DAC_max_value)
-    DAC_y = within_limits(DAC_offset_y + pixel_y*DAC_increment, upper = DAC_max_value)
-    return c_uint16(DAC_x), c_uint16(DAC_y)
+    dac_x = within_limits(dac_offset_x + pixel_x*dac_increment, upper = dac_max_value)
+    dac_y = within_limits(dac_offset_y + pixel_y*dac_increment, upper = dac_max_value)
+    return c_uint16(dac_x), c_uint16(dac_y)
 
 
 def within_limits(val, lower=None, upper=None):
@@ -190,8 +190,7 @@ class TimeScaleConverter :
             new_index = self.find_closest_int(to_check)
             print(f"The duration is invalid, using {self.available_durations[str(new_index)]} instead.")
             return new_index
-        else :
-            return found[0]
+        return found[0]
         
     def find_closest_quantity(self, index : int) :
         compare = [(i, abs(self.available_durations(i) - self.available_durations[str(index)])) for i in self.available_durations]
@@ -199,14 +198,11 @@ class TimeScaleConverter :
         return compare[0]
     
     def from_int_to_quantity(self, index : int) :
-        if str(index) in self.available_durations.keys() : 
+        if str(index) in self.available_durations.keys() :
             return self.available_durations[str(index)]
-        else :  
+        else : 
             new_quant = self.find_closest_quantity()
             print(f"The duration is invalid, using {new_quant} instead.")
             return new_quant
-        
-            
-        
-            
+   
     
