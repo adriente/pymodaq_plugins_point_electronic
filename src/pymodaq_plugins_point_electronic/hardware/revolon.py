@@ -69,9 +69,9 @@ class ScanControllerConfig :
 
 class  ScanController : 
     def __init__(self) : 
-        self.pymodaq_config = Config()
-        self.dll = self.load_dll()
         self.config = ScanControllerConfig()
+        self.dll = self.load_dll()
+        
         self.config.load_profile('basic_scan')
         # Properties
         self._image_width = 1024 # pixels
@@ -106,7 +106,7 @@ class  ScanController :
 
     def load_dll(self) : 
         if op_sys == "win32" or  op_sys == "win64":
-            os.add_dll_directory(self.pymodaq_config['REVOLON']['connection']['dll_path'])
+            os.add_dll_directory(self.config.config['REVOLON']['connection']['dll_path'])
             if p.architecture()[0] == "32bit":
                 scan_control_lib = cdll.LoadLibrary("DISS6Control32.dll")
             elif p.architecture()[0] == "64bit":
@@ -115,13 +115,15 @@ class  ScanController :
             scan_control_lib = cdll.LoadLibrary("libdiss6control.so")
         elif op_sys == "darwin":
             scan_control_lib = cdll.LoadLibrary("libdiss6control.dylib")
+        else : 
+            raise FileNotFoundError('There is no dll corresponding to your OS.')
         return scan_control_lib
 
     def connect(self) :
-        if self.pymodaq_config['REVOLON']['connection']['connection_type'] == "USB": 
+        if self.config.config['REVOLON']['connection']['connection_type'] == "USB": 
             returnCode = self.dll.InitUSB(None)
-        if self.pymodaq_config['REVOLON']['connection']['connection_type'] == "LAN":
-            addr_byte = bytes(self.pymodaq_config['REVOLON']['connection']['IP'], 'ascii') 
+        if self.config.config['REVOLON']['connection']['connection_type'] == "LAN":
+            addr_byte = bytes(self.config.config['REVOLON']['connection']['IP'], 'ascii') 
             returnCode = self.dll.InitTCP(create_string_buffer(addr_byte), 7701, 7702, 7703, 7704, 7705)
         if returnCode != sc.SUCCESS:
             print(f"Init failed (return code {returnCode:08X})!")
@@ -149,9 +151,19 @@ class  ScanController :
             if self._status.value == 0 :
                 pass
             if self._status.value == 1 : 
-                return 1
-            if self._status.value == 2 and not(self.full) :
-                return 2
+                return True
+            if self._status.value == 2 :
+                return False
+            
+    # def wait_for_acq(self) :
+    #     while 1 : 
+    #         ret = self.dll.SysWaitForMultipleEvents(byref(self.eventHandles), len(self.eventHandles), False, 5000, byref(self._status)) 
+    #         if self._status.value == 0 :
+    #             pass
+    #         if self._status.value == 1 : 
+    #             return 1
+    #         if self._status.value == 2 and not(self.full) :
+    #             return 2
             
     # def update_status(self) : 
     #     ret = self.dll.SysWaitForMultipleEvents(byref(self.eventHandles), len(self.eventHandles), False, 5000, byref(self._status))
@@ -199,7 +211,7 @@ class  ScanController :
     def acquired_data(self) :
         pixelCount = c_uint32(self.image_height*self.image_width)
         pixelOffset = c_uint32()
-        status = c_uint32()
+        status = c_uint32() 
         returnCode = self.dll.ReadChannelData(self.hScanJob, byref(self.scanFrameBufferArray), byref(pixelCount), sc.READ_FLAG_USE_PIXEL_OFFSET, None, byref(pixelOffset), byref(status))
         if returnCode != sc.SUCCESS: exit(f"ReadChannelData failed! Error code: {returnCode:08X}")
         # time.sleep(0.01)
@@ -208,14 +220,35 @@ class  ScanController :
         # print(f'box status {self._status}')
         # print(f'data status {self.data_status}')
         # print(self.data.sum())
-        if (status.value == sc.READ_STATUS_DATA_LOSS):
-            print("Data loss!") 
+        # if (status.value == sc.READ_STATUS_DATA_LOSS):
+        #     print("Data loss!") 
     
-        if (status.value == sc.READ_STATUS_BUFFER_EMPTY):
-            self.full = 0
-            # print("Empty buffer")
+        # if (status.value == sc.READ_STATUS_BUFFER_EMPTY):
+        #     break
+                # print("Empty buffer")
         
-        return pixelCount, pixelOffset, np.frombuffer(self.scanFrameBuffer, dtype=np.uint16)
+        return status, pixelCount, pixelOffset, np.frombuffer(self.scanFrameBuffer, dtype=np.uint16)
+    
+    # def acquired_data(self) :
+    #     pixelCount = c_uint32(self.image_height*self.image_width)
+    #     pixelOffset = c_uint32()
+    #     status = c_uint32()
+    #     returnCode = self.dll.ReadChannelData(self.hScanJob, byref(self.scanFrameBufferArray), byref(pixelCount), sc.READ_FLAG_USE_PIXEL_OFFSET, None, byref(pixelOffset), byref(status))
+    #     if returnCode != sc.SUCCESS: exit(f"ReadChannelData failed! Error code: {returnCode:08X}")
+    #     # time.sleep(0.01)
+    #     # check status
+    #     # print("Read ", pixelCount.value, " at offset ", pixelOffset.value)
+    #     # print(f'box status {self._status}')
+    #     # print(f'data status {self.data_status}')
+    #     # print(self.data.sum())
+    #     if (status.value == sc.READ_STATUS_DATA_LOSS):
+    #         print("Data loss!") 
+
+    #     if (status.value == sc.READ_STATUS_BUFFER_EMPTY):
+    #         self.full = 0
+    #         # print("Empty buffer")
+        
+    #     return pixelCount, pixelOffset, np.frombuffer(self.scan
 
     def prepare_acquisition(self,
                             num_frame,
