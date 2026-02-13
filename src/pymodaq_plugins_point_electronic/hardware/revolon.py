@@ -15,6 +15,8 @@ import time
 
 logger = set_logger(get_module_name(__file__))
 
+config = Config()
+
 class ScanControllerConfig :
 
     _acceptable_channels = {'none' : sc.CHANNEL_SOURCE_NONE,
@@ -30,7 +32,6 @@ class ScanControllerConfig :
                           'uint32' : sc.CHANNEL_DATATYPE_U32}
 
     def __init__(self):
-        self.config = Config()
         self.time_scale_converter = ru.TimeScaleConverter()
         self.channels = []
         self.dtypes = []
@@ -39,28 +40,28 @@ class ScanControllerConfig :
         self.flyback_line_start_delay = '0s'
         self.flyback_line_prescan_pixels = 0
         self.flyback_frame_step_time = '0s'
-        self.flyback_frame_prescan_lines = 0 
+        self.flyback_frame_prescan_lines = 0
 
     def load_profile(self, profile_name : str = 'basic_scan') : 
         # flyback parameters
-        self.flyback_steps = self.config['REVOLON']['scan_profiles'][profile_name]['flyback_steps']
+        self.flyback_steps = config('REVOLON','scan_profiles',profile_name,'flyback_steps')
         self.flyback_line_step_time = self.time_scale_converter.from_quantity_to_int(
-            self.config['REVOLON'][profile_name]['flyback_line_step_time']
+            config('REVOLON','scan_profiles',profile_name,'flyback_line_step_time')
             )
         self.flyback_line_start_delay = self.time_scale_converter.from_quantity_to_int(
-            self.config['REVOLON'][profile_name]['flyback_line_start_delay']
+            config('REVOLON','scan_profiles',profile_name,'flyback_line_start_delay')
             )
-        self.flyback_line_prescan_pixels = self.config['REVOLON']['scan_profiles'][profile_name]['flyback_line_prescan_pixels']
+        self.flyback_line_prescan_pixels = config('REVOLON','scan_profiles',profile_name,'flyback_line_prescan_pixels')
         self.flyback_frame_step_time = self.time_scale_converter.from_quantity_to_int(
-            self.config['REVOLON'][profile_name]['flyback_frame_step_time']
+            config('REVOLON','scan_profiles',profile_name,'flyback_frame_step_time')
             )
-        self.flyback_frame_prescan_lines = self.config['REVOLON']['scan_profiles'][profile_name]['flyback_frame_prescan_lines']
+        self.flyback_frame_prescan_lines = config('REVOLON','scan_profiles',profile_name,'flyback_frame_prescan_lines')
         self.load_channels(profile_name)
 
     def load_channels(self, profile_name : str = 'basic_scan') :
         self.channels = []
         try :
-            for ch in self.config['REVOLON']['scan_profiles'][profile_name]['channels'] :
+            for ch in config('REVOLON','scan_profiles',profile_name,'channels') :
                 assert ch in self._acceptable_channels, f"{ch} is an invalid channel type, check ScanControllerConfig"
                 self.channels.append(self._acceptable_channels[ch])
         except AssertionError : 
@@ -69,7 +70,7 @@ class ScanControllerConfig :
 
         self.dtypes = []
         try :
-            for dt in self.config['REVOLON']['scan_profiles'][profile_name]['dtypes'] : 
+            for dt in config('REVOLON','scan_profiles',profile_name,'dtypes') : 
                 assert dt in self._acceptable_dtypes, f"{dt} is an invalid channel type, check ScanControllerConfig"
                 self.dtypes.append(self._acceptable_dtypes[dt])
         except AssertionError : 
@@ -86,8 +87,8 @@ class ScanController :
         self._scan_profile = 'basic_scan'
         self.config.load_profile(self.scan_profile)
         # Properties
-        self._image_width = 1024 # pixels
-        self._image_height = 1024 # pixels
+        self._image_width = 512 # pixels
+        self._image_height = 512 # pixels
         self._dwell_time = Quantity('10000 ns') #ns/pixel units, must be multiple of 10
         self._dwell_time_int = self._dwell_time.magnitude // 10
         self._status = c_uint32(0)
@@ -117,7 +118,7 @@ class ScanController :
 
     def load_dll(self) : 
         if op_sys in ("win32","win64"):
-            os.add_dll_directory(self.config.config['REVOLON']['connection']['dll_path'])
+            os.add_dll_directory(config('REVOLON','connection','dll_path'))
             if p.architecture()[0] == "32bit":
                 scan_control_lib = cdll.LoadLibrary("DISS6Control32.dll")
             elif p.architecture()[0] == "64bit":
@@ -131,10 +132,10 @@ class ScanController :
         return scan_control_lib
 
     def connect(self) :
-        if self.config.config['REVOLON']['connection']['connection_type'] == "USB":
+        if config('REVOLON','connection','connection_type') == "USB":
             return_code = self.dll.InitUSB(None)
-        elif self.config.config['REVOLON']['connection']['connection_type'] == "LAN":
-            addr_byte = bytes(self.config.config['REVOLON']['connection']['IP'], 'ascii') 
+        elif config('REVOLON','connection','connection_type') == "LAN":
+            addr_byte = bytes(config('REVOLON','connection','IP'), 'ascii')
             return_code = self.dll.InitTCP(create_string_buffer(addr_byte), 7701, 7702, 7703, 7704, 7705)
         else :
             return_code = sc.CANNOT_LOCATE_DEVICE
@@ -199,10 +200,10 @@ class ScanController :
         data_list = self.build_data_list()
         return status, data_list
     
-    def build_data_list(self) : 
+    def build_data_list(self) :
         data_list = []
         for i, scan_frame_buffer in enumerate(self.scan_frame_buffers) :
-            dtype_name = self.config.config['REVOLON']['scan_profiles'][self.scan_profile]['dtypes'][i]
+            dtype_name = config('REVOLON','scan_profiles',self.scan_profile,'dtypes')[i]
             dtype = getattr(np,dtype_name)
             data_list.append(
                 np.frombuffer(scan_frame_buffer, dtype = dtype)
@@ -214,18 +215,24 @@ class ScanController :
                             x_start,
                             y_start,
                             x_end,
-                            y_end) : 
+                            y_end) :
         if x_start and y_start and x_end and y_end :
             assert (x_end - x_start) > 0, "There is something wrong with ROI selection"
-            assert (y_end - y_start) > 0, "There is something wrong with ROI selection" 
+            assert (y_end - y_start) > 0, "There is something wrong with ROI selection"
             scan_pixels = (x_end - x_start) * (y_end - y_start)
         else :
             scan_pixels = self.image_height * self.image_width
 
-        scan_tuple = (sc.ChannelInfo_t(sc.ChannelId_t(ch, i),0,self.config.dtypes[i]) for i,ch in enumerate(self.config.channels))
+        scan_tuple = (sc.ChannelInfo_t(sc.ChannelId_t(ch, i),0,self.config.dtypes[i])
+                      for i,ch in enumerate(self.config.channels))
         scan_channels = (sc.ChannelInfo_t * len(self.config.channels))(*scan_tuple)
-        self.scan_frame_buffers = tuple(((c_uint16 * scan_pixels)() for _ in scan_channels))
-        addr_tuple = (addressof(sfb) for sfb in self.scan_frame_buffers) 
+        self.scan_frame_buffers = tuple(
+            ((ru.C_TYPE_DICT[config('REVOLON',
+                                    'scan_profiles',
+                                    self.scan_profile,
+                                    'channels')[i]] * scan_pixels)()
+            for i,_ in enumerate(scan_channels)))
+        addr_tuple = (addressof(sfb) for sfb in self.scan_frame_buffers)
         self.scan_frame_buffer_array = (c_void_p * len(scan_channels))(*addr_tuple)
 
         # Init job
@@ -294,7 +301,7 @@ class ScanController :
         self.dll.SetEventScanJobFinished(self.h_scan_job, self.event_handles[2])
         self.dll.SetEventScanJobAborted(self.h_scan_job, self.event_handles[3])
 
-    def stop_after_frame(self) : 
+    def stop_after_frame(self) :
         return_code = self.dll.StopScanJob(self.h_scan_job, sc.ABORT_SCAN_AFTER_FRAME)
         if return_code != sc.SUCCESS:
             sys.exit("StopScanJob failed! Error code: %08X",return_code)
@@ -321,7 +328,7 @@ class ScanController :
     @property
     def x_position(self) :
         dac_x, dac_y = self._get_dac_scan_pos() 
-        self._x_positon, _ = ru.dac_to_pixel(dac_x=dac_x,
+        self._x_position, _ = ru.dac_to_pixel(dac_x=dac_x,
                                dac_y=dac_y,
                                dac_increment=self._dac_x_step,
                                dac_offset_x=self._dac_offset_x,
@@ -367,9 +374,9 @@ class ScanController :
 
     @scan_profile.setter
     def scan_profile(self, value : str) :
-        assert value in self.config.config['Revolon']['scan_profiles']("The selected profile %s isn't part of the avalaible profiles : %s",
+        assert value in config('Revolon','scan_profiles')("The selected profile %s isn't part of the avalaible profiles : %s",
                                                                        value,
-                                                                       list(self.config.config['Revolon']['scan_profiles'].keys()))
+                                                                       list(config('Revolon','scan_profiles').keys()))
         self._scan_profile = value
         self.config.load_profile(value)
 
@@ -410,14 +417,17 @@ class ScanController :
             print("The image height in pixel could not be changed. Check dac offsets")
 
     @property
-    def dwell_time(self) : 
-        return self._dwell_time.to('ns')
+    def dwell_time(self) :
+        return self._dwell_time.to('us')
 
     @dwell_time.setter
-    def dwell_time(self, value) : 
-        ns_value = value.to('ns').magnitude
-        self._dwell_time_int = ns_value//10
-        self._dwell_time = value.to('ns')
+    def dwell_time(self, value) :
+        if isinstance(value,str) :
+            q = Quantity(value)
+        else :
+            q = Quantity(value,'us')
+        self._dwell_time_int = round(q.to('ns').magnitude//10)
+        self._dwell_time = q
 
 if __name__ == '__main__' : 
     Revolon = ScanController()

@@ -4,6 +4,12 @@ from ctypes import *
 # Returns in dac units the step size in x or y direction for a scan.
 # It is mainly based on the number of pixels in the image
 
+C_TYPE_DICT = {
+    'uint8' : c_uint8,
+    'uint16' : c_uint16,
+    'uint32' : c_uint32
+}
+
 def from_roi_info_to_int_coordinates(roi_info) : 
     x_origin, y_origin = roi_info.origin
     size_x, size_y = roi_info.size
@@ -142,7 +148,6 @@ def within_limits(val, lower=None, upper=None):
         val = min(val, upper)
     return val
 
-
 class TimeScaleConverter : 
     def __init__(self) :
         self.ureg = UnitRegistry()
@@ -204,5 +209,4 @@ class TimeScaleConverter :
             new_quant = self.find_closest_quantity()
             print(f"The duration is invalid, using {new_quant} instead.")
             return new_quant
-   
     

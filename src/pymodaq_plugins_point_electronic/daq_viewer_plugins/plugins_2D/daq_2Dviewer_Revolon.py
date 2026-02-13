@@ -8,7 +8,7 @@ from pymodaq_gui.plotting.utils.plot_utils import RoiInfo
 from pymodaq.control_modules.viewer_utility_classes import DAQ_Viewer_base, comon_parameters, main
 from pymodaq.utils.data import DataFromPlugins
 
-from pymodaq_plugins_point_electronic.hardware.revolon import ScanController
+from pymodaq_plugins_point_electronic.hardware.revolon import ScanController, config
 from pymodaq_plugins_point_electronic.hardware import scan_control as consts_sc
 from qtpy import QtWidgets, QtCore
 from qtpy.QtCore import QThread
@@ -43,26 +43,21 @@ class DAQ_2DViewer_Revolon(DAQ_Viewer_base):
 
     """
     live_mode_available = True
-    callback_signal = QtCore.Signal()
+    callback_signal = QtCore.Signal(int)
     params = comon_parameters + [
         {'title': 'Image width', 'name': 'image_width', 'type': 'int', 'value': 512},
         {'title': 'Image height', 'name': 'image_height', 'type': 'int', 'value': 512},
-        {'title' : 'Dwell time', 'name' : 'dwell_time', 'type' : 'int', 'value' : 1000},
-        {'title' : 'Use Roi', 'name' : 'use_roi', 'type' : 'bool', 'value' : False}
+        {'title' : 'Dwell time (us)', 'name' : 'dwell_time', 'type' : 'int', 'value' : 10},
+        # {'title' : 'Use Roi', 'name' : 'use_roi', 'type' : 'bool', 'value' : False}
     ]
 
     def ini_attributes(self):
-        #  TODO declare the type of the wrapper (and assign it to self.controller) you're going to use for easy
-        #  autocompletion
         self.controller : ScanController = None
-
-        # TODO declare here attributes you want/need to init with a default value
 
         self.x_axis = None
         self.y_axis = None
         self.roi_select_info : RoiInfo = None
         self.roi_select_viewer_index : int = None
-        self._data = None
 
     def commit_settings(self, param: Parameter):
         """Apply the consequences of a change of value in the detector settings
@@ -72,20 +67,19 @@ class DAQ_2DViewer_Revolon(DAQ_Viewer_base):
         param: Parameter
             A given parameter (within detector_settings) whose value has been changed by the user
         """
-        # TODO for your custom plugin
         if param.name() == "image_width":
             self.controller.image_width = param.value()
-            self.temp_data = np.zeros((self.controller.image_width, self.controller.image_height))
+            self.set_axes()
         if param.name() == "image_height" : 
             self.controller.image_height = param.value()
-            self.temp_data = np.zeros((self.controller.image_width, self.controller.image_height))
+            self.set_axes()
         if param.name() == "dwell_time" : 
             self.controller.dwell_time = param.value()
         #elif ...
 
-    def roi_select(self, roi_info, ind_viewer = 0):
-        self.roi_select_info = roi_info
-        self.roi_select_viewer_index = ind_viewer
+    # def roi_select(self, roi_info, ind_viewer = 0):
+    #     self.roi_select_info = roi_info
+    #     self.roi_select_viewer_index = ind_viewer
     
     def crosshair(self, crosshair_info, ind_viewer = 0):
         return super().crosshair(crosshair_info, ind_viewer)
@@ -101,27 +95,44 @@ class DAQ_2DViewer_Revolon(DAQ_Viewer_base):
             daq_utils.ThreadCommand
         """
         try:
-            # self.controller.full = 
-                
+            dfp = self.prepare_dfp(data)
             if status:
-                print('finished frame')
                 self.dte_signal.emit(DataToExport('STEM image',
-                                                data=[DataFromPlugins(name='STEM image',
-                                                data=[np.atleast_1d(
-                                                data[0].reshape((self.controller.image_width,self.controller.image_height)).astype(float)) ],
-                                                dim='Data2D')]))
-            else : 
-                print('temp')
+                                                data=dfp,
+                                                dim='Data2D'))
+            else :
                 self.dte_signal_temp.emit(DataToExport('STEM image',
-                                                data=[DataFromPlugins(name='STEM image',
-                                                data=[np.atleast_1d(
-                                                data[0].reshape((self.controller.image_width,self.controller.image_height)).astype(float)) ],
-                                                dim='Data2D')])
-                )
-
+                                                data=dfp,
+                                                dim='Data2D'))
         except Exception as e:
             print("An exception occured in emit data")
             self.emit_status(ThreadCommand('Update_Status', [str(e), 'log']))
+
+    def set_axes(self) :
+        data_x_axis = np.linspace(start= 0,
+                                  stop = self.controller.image_width,
+                                  num = self.controller.image_width)
+        data_y_axis = np.linspace(start= 0,
+                                  stop = self.controller.image_height,
+                                  num = self.controller.image_height)
+        channel_number = len(self.controller.config.channels)
+        dummy_data = [np.zeros((self.controller.image_height,self.controller.image_width)),]*channel_number
+        self.y_axis = Axis(data=data_y_axis, label='', units='', index=0)
+        self.x_axis = Axis(data=data_x_axis, label='', units='', index=1)
+        dfp = self.prepare_dfp(dummy_data)
+        self.dte_signal_temp.emit(DataToExport('STEM',data=dfp))
+    
+    def prepare_dfp(self,data_list : list) :
+        dfp = [DataFromPlugins(name = config('REVOLON',
+                                             'scan_profiles',
+                                             self.controller.scan_profile,
+                                             'channels')[i],
+                               data = [np.atleast_1d(data.reshape((self.controller.image_height,
+                                                                   self.controller.image_width)))],
+                               dim = 'Data2D',axes=[self.x_axis, self.y_axis]
+                               )
+                                for i,data in enumerate(data_list) ]
+        return dfp
     
     def ini_detector(self, controller=None):
         """Detector communication initialization
@@ -139,48 +150,48 @@ class DAQ_2DViewer_Revolon(DAQ_Viewer_base):
             False if initialization failed otherwise True
         """
         self.controller = self.ini_detector_init(slave_controller=controller, new_controller= ScanController())
-        if self.is_master : 
+        if self.is_master :
             connect_rc = self.controller.connect()
 
-        if connect_rc == consts_sc.SUCCESS : 
+            if connect_rc == consts_sc.SUCCESS :
 
-        # init axes from image
-            info = "The DAQ_viewer Revolon scan engine has successfully started"
-            initialized = True
-            iw, ih = self.controller.image_width, self.controller.image_height
-            self.x_axis = Axis(data=np.linspace(0,  iw - 1, iw, dtype=int), label='Pixels', index=1)
-            self.y_axis = Axis(data=np.linspace(0, ih - 1, ih, dtype=int), label='Pixels', index=1)
-            self._data = np.zeros((iw, ih))
+            # init axes from image
+                info = "The DAQ_viewer Revolon scan engine has successfully started"
+                initialized = True
 
-            self.callback = RevolonCallback(self.controller)
-            self.callback_thread = QtCore.QThread()
-            self.callback.moveToThread(self.callback_thread)
-            self.callback.data_sig.connect(self.emit_data)  # when the wait for acquisition returns (with data taken), emit_data will be fired
+                self.callback = RevolonCallback(self.controller)
+                self.callback_thread = QtCore.QThread()
+                self.callback.moveToThread(self.callback_thread)
+                self.callback.data_sig.connect(self.emit_data)  # when the wait for acquisition returns (with data taken), emit_data will be fired
 
-            self.callback_signal.connect(self.callback.readout)
-            self.callback_thread.callback = self.callback
-            self.callback_thread.start()
-        # self.previous_data = np.zeros((1048576,), dtype = np.uint16)
+                self.callback_signal.connect(self.callback.readout)
+                self.callback_thread.callback = self.callback
+                self.callback_thread.start()
+
+            else :
+                info = f"Init failed (return code {connect_rc:08X})!"
+                initialized = False
 
         else : 
-            info = f"Init failed (return code {connect_rc:08X})!"
-            initialized = False
+            self.controller = controller
+            info = "A slave Revolon has been initialised"
+            initialized = True
+
+        self.set_axes()
+
         return info, initialized
 
     def close(self):
         """Terminate the communication protocol"""
-        ## TODO for your custom plugin
         if self.is_master :
-            self.controller.close()  # when writing your own plugin remove this line
-        #  self.controller.your_method_to_terminate_the_communication()  # when writing your own plugin replace this line
+            self.controller.close() 
 
     def stop(self):
         """
             stop the camera's actions.
         """
         try:
-            self.controller.stop_immediately()  # abort the camera actions
-            # print('stopped')
+            self.controller.stop_immediately() 
         except:
             pass
         return ""
@@ -203,20 +214,20 @@ class DAQ_2DViewer_Revolon(DAQ_Viewer_base):
         try:
 
             if kwargs.get('live',False) == True :
-                if self.settings['use_roi'] : 
-                    x_origin, y_origin, x_end, y_end = ru.from_roi_info_to_int_coordinates(self.roi_select_info)
-                    self.controller.start(num_frame=0, x_start=x_origin, y_start=y_origin, x_end=x_end, y_end=y_end)
-                else : 
-                    self.controller.start(num_frame=0)
-                self.callback_signal.emit()
+                # if self.settings['use_roi'] : 
+                #     x_origin, y_origin, x_end, y_end = ru.from_roi_info_to_int_coordinates(self.roi_select_info)
+                #     self.controller.start(num_frame=0, x_start=x_origin, y_start=y_origin, x_end=x_end, y_end=y_end)
+                # else : 
+                self.controller.start(num_frame=0)
+                self.callback_signal.emit(0)
 
             else:
-                if self.settings['use_roi'] : 
-                    x_origin, y_origin, x_end, y_end = ru.from_roi_info_to_int_coordinates(self.roi_select_info)
-                    self.controller.start(num_frame=1, x_start=x_origin, y_start=y_origin, x_end=x_end, y_end=y_end)
-                else :
-                    self.controller.start(num_frame=1)
-                self.callback_signal.emit()  # will trigger the waitfor acquisition
+                # if self.settings['use_roi'] : 
+                #     x_origin, y_origin, x_end, y_end = ru.from_roi_info_to_int_coordinates(self.roi_select_info)
+                #     self.controller.start(num_frame=1, x_start=x_origin, y_start=y_origin, x_end=x_end, y_end=y_end)
+                # else :
+                self.controller.start(num_frame=1)
+                self.callback_signal.emit(1)  # will trigger the waitfor acquisition
 
         except Exception as e:
             self.emit_status(ThreadCommand('Update_Status', [str(e), "log"]))
@@ -233,55 +244,36 @@ class RevolonCallback(QtCore.QObject):
         super().__init__()
         self.controller = controller
 
-    def readout(self):
-        last_emit_time = time.time()
-        while True :
-            if self.controller.wait_for_acq() : 
-                status, data_list = self.controller.read_data()
-                # print(f'pixel count : {pix_count.value} and pixel offset : {pix_off.value}')
-                current_time = time.time()
-                print(status)
-                # data[pix_off.value:pix_off.value+pix_count.value] +=np.random.randint(0,150)
-                if (current_time -last_emit_time) > 0.01 :
-                    if status.value in ((consts_sc.READ_STATUS_FRAME_END | consts_sc.READ_STATUS_BUFFER_EMPTY),
-                                        consts_sc.READ_STATUS_FRAME_END) :
-                        self.data_sig.emit(data_list, True)
-                        last_emit_time = time.time()
+    def readout(self,num_frame : int):
+        if num_frame == 0 :
+            last_emit_time = time.time()
+            while True :
+                if self.controller.wait_for_acq() : 
+                    status, data_list = self.controller.read_data()
+                    current_time = time.time()
+                    if (current_time -last_emit_time) > 0.1 :
+                        if status.value in ((consts_sc.READ_STATUS_FRAME_END | consts_sc.READ_STATUS_BUFFER_EMPTY),
+                                            consts_sc.READ_STATUS_FRAME_END) :
+                            self.data_sig.emit(data_list, True)
+                            last_emit_time = time.time()
+                        else :
+                            self.data_sig.emit(data_list,False)
+                            last_emit_time = time.time()
+                else :
+                    break
+        else :
+            for _ in range(num_frame) :
+                while True :
+                    if self.controller.wait_for_acq() :
+                        status, data_list = self.controller.read_data()
+                        if status.value in ((consts_sc.READ_STATUS_FRAME_END | consts_sc.READ_STATUS_BUFFER_EMPTY),
+                                            consts_sc.READ_STATUS_FRAME_END) :
+                            self.data_sig.emit(data_list, True)
+                            break
+                        else :
+                            self.data_sig.emit(data_list,False)
                     else :
-                        self.data_sig.emit(data_list,False)
-                        last_emit_time = time.time()
-            else :
-                 
-                break
-            
-# class RevolonCallback(QtCore.QObject):
-#     """
-
-#     """
-#     data_sig = QtCore.Signal()
-#     # bool dans le data sig pour gérer le data_sig_temp
-
-#     def __init__(self, status_fn):
-#         super(RevolonCallback, self).__init__()
-#         self.status_fn = status_fn
-
-#     def read_status(self):
-#         ind = self.status_fn()
-#         if ind == 0 :
-#             pass
-#         elif ind == 1 :
-#             self.data_sig.emit()
-#             # faire 2 cas, soit l'acqusition d'1 frame est en cours : data_sig_temp
-#             # soit il a fini et il faut data_sig
-#         elif ind == 2 :
-#             logger.info("Acquisition Stopped")
-#             #self.data_sig.emit(False)
-#         else : 
-#             raise NotImplementedError('Message to clarify TODO')
-
-
-
-
+                        break
 
 if __name__ == '__main__':
     main(__file__)
