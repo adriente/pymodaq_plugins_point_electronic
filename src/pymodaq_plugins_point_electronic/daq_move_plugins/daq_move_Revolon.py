@@ -5,7 +5,7 @@ from pymodaq.control_modules.move_utility_classes import (DAQ_Move_base, comon_p
 
 from pymodaq_utils.utils import ThreadCommand  # object used to send info back to the main thread
 from pymodaq_gui.parameter import Parameter
-from pymodaq_plugins_point_electronic.hardware.revolon import ScanController
+from pymodaq_plugins_point_electronic.hardware.revolon import Revolon
 from pymodaq_plugins_point_electronic.hardware import scan_control as consts_sc
 import numpy as np
 
@@ -48,7 +48,7 @@ class DAQ_Move_Revolon(DAQ_Move_base):
     def ini_attributes(self):
         #  TODO declare the type of the wrapper (and assign it to self.controller) you're going to use for easy
         #  autocompletion
-        self.controller : ScanController = None
+        self.controller : Revolon = None
 
         #TODO declare here attributes you want/need to init with a default value
 
@@ -127,7 +127,7 @@ class DAQ_Move_Revolon(DAQ_Move_base):
         initialized: bool
             False if initialization failed otherwise True
         """
-        self.controller = self.ini_stage_init(slave_controller=controller, new_controller=ScanController())  # will be useful when controller is slave
+        self.controller = self.ini_stage_init(slave_controller=controller, new_controller=Revolon())  # will be useful when controller is slave
         if self.is_master : 
             connect_rc = self.controller.connect()
         else : 

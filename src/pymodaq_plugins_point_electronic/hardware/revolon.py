@@ -15,10 +15,41 @@ import time
 
 logger = set_logger(get_module_name(__file__))
 
+################
+# Code Outline #
+################
+
+# I. RevolonConfig
+# II. Revolon
+# I. 2. Initialisation
+# I. 3. Data acquisition and axes
+# I. 4. Properties
+# II. Callback class
+# III. Local testing code
+
+# PyMoDAQ's Singleton config object
 config = Config()
 
-class ScanControllerConfig :
+#################
+# RevolonConfig #
+#################
 
+class RevolonConfig :
+    """
+    Class to convert human-readable config file parameters into dll-readable integers
+
+    Attributes
+    ----------
+    channels : list[int]
+        list of selected output channels (in dll-compatible integer)
+    dtypes : list[int]
+        list of selected dtype for each channel (in dll-compatible integer)
+    
+    Notes
+    -----
+    The flyback parameters are not documented here.
+    See the SDK's documentation (especially the schematics related to the SetImageGeometry function) for further details.
+    """
     _acceptable_channels = {'none' : sc.CHANNEL_SOURCE_NONE,
                             'a_fast_a' : sc.CHANNEL_SOURCE_A_FAST_A,
                             'a_fast_b' : sc.CHANNEL_SOURCE_A_FAST_B,
@@ -42,8 +73,17 @@ class ScanControllerConfig :
         self.flyback_frame_step_time = '0s'
         self.flyback_frame_prescan_lines = 0
 
-    def load_profile(self, profile_name : str = 'basic_scan') : 
-        # flyback parameters
+    def load_profile(self, profile_name : str = 'basic_scan') :
+        """
+        For a given profile, loads the different flyback parameters.
+        It performs the necessary conversions from human-readable values to dll-compatible integers.
+        It also loads the associated channels (see load_channels). 
+        
+        Parameters
+        ----------
+        profile_name : str
+            Name of the selected scan profile as written in the config file.
+        """
         self.flyback_steps = config('REVOLON','scan_profiles',profile_name,'flyback_steps')
         self.flyback_line_step_time = self.time_scale_converter.from_quantity_to_int(
             config('REVOLON','scan_profiles',profile_name,'flyback_line_step_time')
@@ -59,10 +99,18 @@ class ScanControllerConfig :
         self.load_channels(profile_name)
 
     def load_channels(self, profile_name : str = 'basic_scan') :
+        """
+        For a given profile, loads the different channel parameters (source + data type). 
+        
+        Parameters
+        ----------
+        profile_name : str
+            Name of the selected scan profile as written in the config file.
+        """
         self.channels = []
         try :
             for ch in config('REVOLON','scan_profiles',profile_name,'channels') :
-                assert ch in self._acceptable_channels, f"{ch} is an invalid channel type, check ScanControllerConfig"
+                assert ch in self._acceptable_channels, f"{ch} is an invalid channel type, check RevolonConfig"
                 self.channels.append(self._acceptable_channels[ch])
         except AssertionError : 
             ch_string = '\n'.join('{}'.format(*k) for k in self.channels)
@@ -70,30 +118,46 @@ class ScanControllerConfig :
 
         self.dtypes = []
         try :
-            for dt in config('REVOLON','scan_profiles',profile_name,'dtypes') : 
-                assert dt in self._acceptable_dtypes, f"{dt} is an invalid channel type, check ScanControllerConfig"
+            for dt in config('REVOLON','scan_profiles',profile_name,'dtypes') :
+                assert dt in self._acceptable_dtypes, f"{dt} is an invalid channel type, check RevolonConfig"
                 self.dtypes.append(self._acceptable_dtypes[dt])
-        except AssertionError : 
+        except AssertionError :
             ch_string = '\n'.join('{}'.format(*k) for k in self.channels)
             logger.info('Only the following channels were loaded : %s .',ch_string)
 
         assert len(self.channels) == len(self.dtypes), f"dtypes and channels don't match.\nChannels : {self.channels}, Dtypes : {self.dtypes}"
 
+###########
+# Revolon #
+###########
 
-class ScanController :
+class Revolon :
+    """
+    Controller class that manages the communication with the Revolon hardware. 
+
+    Attributes
+    ----------
+    config : RevolonConfig
+        config object to manage flyback and channel parameters
+    dll
+        python object to call the method of the point electronic dll
+    
+
+
+
+    """
     def __init__(self) :
-        self.config = ScanControllerConfig()
+        self.config = RevolonConfig()
         self.dll = self.load_dll()
         self._scan_profile = 'basic_scan'
         self.config.load_profile(self.scan_profile)
+        
         # Properties
         self._image_width = 512 # pixels
         self._image_height = 512 # pixels
         self._dwell_time = Quantity('10000 ns') #ns/pixel units, must be multiple of 10
         self._dwell_time_int = self._dwell_time.magnitude // 10
         self._status = c_uint32(0)
-        self.full = 0
-        # self.thread_called = 0
 
         # Advanced settings
         self._dac_x_step, self._dac_offset_x, self._dac_offset_y = ru.calculate_dac_increment(
@@ -230,7 +294,7 @@ class ScanController :
             ((ru.C_TYPE_DICT[config('REVOLON',
                                     'scan_profiles',
                                     self.scan_profile,
-                                    'channels')[i]] * scan_pixels)()
+                                    'dtypes')[i]] * scan_pixels)()
             for i,_ in enumerate(scan_channels)))
         addr_tuple = (addressof(sfb) for sfb in self.scan_frame_buffers)
         self.scan_frame_buffer_array = (c_void_p * len(scan_channels))(*addr_tuple)
@@ -268,6 +332,9 @@ class ScanController :
                                             self.config.flyback_frame_prescan_lines)
         if return_code != sc.SUCCESS:
             sys.exit("SetImageGeometry failed! Error code: %08X",return_code)
+
+        self.dll.SetPixelClockLength(sc.TIME_SCALE_5S)
+        self.dll.SetClockInvertMask(1)
 
         # Flyback parameters
         return_code = self.dll.SetBeamReturnTiming(self.h_scan_job,
@@ -333,7 +400,7 @@ class ScanController :
                                dac_increment=self._dac_x_step,
                                dac_offset_x=self._dac_offset_x,
                                dac_offset_y=self._dac_offset_y)
-        return self._x_positon
+        return self._x_position
     
     @x_position.setter
     def x_position(self,value : int) : 
@@ -430,12 +497,13 @@ class ScanController :
         self._dwell_time = q
 
 if __name__ == '__main__' : 
-    Revolon = ScanController()
+    Revolon = Revolon()
     Revolon.connect()
-    x = int(input('x ? : '))
-    y = int(input('y ? : '))
+    print(Revolon.dll.GetPixelClockLength())
+    x = 256 #int(input('x ? : '))
+    y = 256 # int(input('y ? : '))
     Revolon.image_height = y
     Revolon.image_width = x
-    Revolon.start(1)
+    Revolon.start(100)
     time.sleep(5.0)
-    dt1 = Revolon.read_data()
+    # dt1 = Revolon.read_data()

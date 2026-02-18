@@ -8,7 +8,7 @@ from pymodaq_gui.plotting.utils.plot_utils import RoiInfo
 from pymodaq.control_modules.viewer_utility_classes import DAQ_Viewer_base, comon_parameters, main
 from pymodaq.utils.data import DataFromPlugins
 
-from pymodaq_plugins_point_electronic.hardware.revolon import ScanController, config
+from pymodaq_plugins_point_electronic.hardware.revolon import Revolon, config
 from pymodaq_plugins_point_electronic.hardware import scan_control as consts_sc
 from qtpy import QtWidgets, QtCore
 from qtpy.QtCore import QThread
@@ -52,7 +52,7 @@ class DAQ_2DViewer_Revolon(DAQ_Viewer_base):
     ]
 
     def ini_attributes(self):
-        self.controller : ScanController = None
+        self.controller : Revolon = None
 
         self.x_axis = None
         self.y_axis = None
@@ -149,7 +149,7 @@ class DAQ_2DViewer_Revolon(DAQ_Viewer_base):
         initialized: bool
             False if initialization failed otherwise True
         """
-        self.controller = self.ini_detector_init(slave_controller=controller, new_controller= ScanController())
+        self.controller = self.ini_detector_init(slave_controller=controller, new_controller= Revolon())
         if self.is_master :
             connect_rc = self.controller.connect()
 
