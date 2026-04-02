@@ -158,6 +158,7 @@ class Revolon :
         self._dwell_time = Quantity('10000 ns') #ns/pixel units, must be multiple of 10
         self._dwell_time_int = self._dwell_time.magnitude // 10
         self._status = c_uint32(0)
+        self._frame_count = c_uint16(0)
 
         # Advanced settings
         self._dac_x_step, self._dac_offset_x, self._dac_offset_y = ru.calculate_dac_increment(
@@ -495,6 +496,11 @@ class Revolon :
             q = Quantity(value,'us')
         self._dwell_time_int = round(q.to('ns').magnitude//10)
         self._dwell_time = q
+        
+    @property
+    def frame_count(self) -> int :
+        self.dll.GetFrameCount(self.h_scan_job,byref(self._frame_count))
+        return self._frame_count.value
 
 if __name__ == '__main__' : 
     Revolon = Revolon()
