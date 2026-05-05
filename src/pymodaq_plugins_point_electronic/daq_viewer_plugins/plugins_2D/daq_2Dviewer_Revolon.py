@@ -222,7 +222,7 @@ class DAQ_2DViewer_Revolon(DAQ_Viewer_base):
         """
         try:
 
-            if kwargs.get('live',False) == True :
+            if kwargs.get('live',False) :
                 # if self.settings['use_roi'] : 
                 #     x_origin, y_origin, x_end, y_end = ru.from_roi_info_to_int_coordinates(self.roi_select_info)
                 #     self.controller.start(num_frame=0, x_start=x_origin, y_start=y_origin, x_end=x_end, y_end=y_end)
@@ -235,8 +235,8 @@ class DAQ_2DViewer_Revolon(DAQ_Viewer_base):
                 #     x_origin, y_origin, x_end, y_end = ru.from_roi_info_to_int_coordinates(self.roi_select_info)
                 #     self.controller.start(num_frame=1, x_start=x_origin, y_start=y_origin, x_end=x_end, y_end=y_end)
                 # else :
-                self.controller.start(num_frame=1)
-                self.callback_signal.emit(1)  # will trigger the waitfor acquisition
+                self.controller.start(num_frame=Naverage)
+                self.callback_signal.emit(Naverage)  # will trigger the waitfor acquisition
 
         except Exception as e:
             self.emit_status(ThreadCommand('Update_Status', [str(e), "log"]))

@@ -155,6 +155,7 @@ class Revolon :
         self._dwell_time = Quantity('10000 ns') #ns/pixel units, must be multiple of 10
         self._dwell_time_int = self._dwell_time.magnitude // 10
         self._status = c_uint32(0)
+        self._frame_count = c_uint16(0)
         self._scan_switch_state = c_bool()
         self._scan_gain_x = c_float()
         self._scan_gain_y = c_float()
@@ -541,6 +542,11 @@ class Revolon :
             q = Quantity(value,'us')
         self._dwell_time_int = round(q.to('ns').magnitude//10)
         self._dwell_time = q
+        
+    @property
+    def frame_count(self) -> int :
+        self.dll.GetFrameCount(self.h_scan_job,byref(self._frame_count))
+        return self._frame_count.value
 
 if __name__ == '__main__' : 
     Revolon = Revolon()
