@@ -49,6 +49,9 @@ class DAQ_2DViewer_Revolon(DAQ_Viewer_base):
         {'title': 'Image height', 'name': 'image_height', 'type': 'int', 'value': 512},
         {'title' : 'Dwell time (us)', 'name' : 'dwell_time', 'type' : 'int', 'value' : 10},
         # {'title' : 'Use Roi', 'name' : 'use_roi', 'type' : 'bool', 'value' : False}
+        {'title' : 'Internal scan enabled', 'name' : 'scan_switch_sate', 'type' : 'bool', 'value' : False},
+        {'title' : 'Scan Gain X','name' : 'scan_gain_x', 'type' : 'float', 'value' : 1.0},
+        {'title' : 'Scan Gain Y','name' : 'scan_gain_y', 'type' : 'float', 'value' : 1.0}
     ]
 
     def ini_attributes(self):
@@ -70,11 +73,17 @@ class DAQ_2DViewer_Revolon(DAQ_Viewer_base):
         if param.name() == "image_width":
             self.controller.image_width = param.value()
             self.set_axes()
-        if param.name() == "image_height" : 
+        if param.name() == "image_height" :
             self.controller.image_height = param.value()
             self.set_axes()
-        if param.name() == "dwell_time" : 
+        if param.name() == "dwell_time" :
             self.controller.dwell_time = param.value()
+        if param.name() == "scan_switch_state" :
+            self.controller.scan_switch_state = param.value()
+        if param.name() == "scan_gain_x" :
+            self.controller.scan_gain_x = param.value()
+        if param.name() == "scan_gain_y" :
+            self.controller.scan_gain_y = param.value()
         #elif ...
 
     # def roi_select(self, roi_info, ind_viewer = 0):

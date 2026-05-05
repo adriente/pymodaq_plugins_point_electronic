@@ -142,9 +142,6 @@ class Revolon :
     dll
         python object to call the method of the point electronic dll
     
-
-
-
     """
     def __init__(self) :
         self.config = RevolonConfig()
@@ -158,6 +155,9 @@ class Revolon :
         self._dwell_time = Quantity('10000 ns') #ns/pixel units, must be multiple of 10
         self._dwell_time_int = self._dwell_time.magnitude // 10
         self._status = c_uint32(0)
+        self._scan_switch_state = c_bool()
+        self._scan_gain_x = c_float()
+        self._scan_gain_y = c_float()
 
         # Advanced settings
         self._dac_x_step, self._dac_offset_x, self._dac_offset_y = ru.calculate_dac_increment(
@@ -359,7 +359,7 @@ class Revolon :
         if return_code != sc.SUCCESS:
             sys.exit("SetFrameCount failed! Error code: %08X",return_code)
 
-        self.dll.SetKeepInternalScanEnabled(self.h_scan_job, True)
+        
 
         for i in range(4):
             self.event_handles[i] = self.dll.SysCreateEvent(False, False)
@@ -422,7 +422,7 @@ class Revolon :
         return self._y_position
 
     @y_position.setter
-    def y_position(self,value : int) : 
+    def y_position(self,value : int) :
         _, dac_y = ru.pixel_to_dac(self._x_position,
                                        value,
                                        self._dac_x_step,
@@ -434,6 +434,52 @@ class Revolon :
     ##############
     # Properties #
     ##############
+
+    @property
+    def scan_switch_state(self) -> bool :
+        self.dll.GetKeepInternalScanEnabled(self.h_scan_job, byref(self._scan_switch_state))
+        return self._scan_switch_state.value
+    
+    @scan_switch_state.setter
+    def scan_switch_state(self, value : bool) -> None :
+        self._scan_switch_state = c_bool(value)
+        self.dll.SetKeepInternalScanEnabled(self.h_scan_job, self._scan_switch_state)
+
+    @property
+    def scan_gain_x(self) -> float : 
+        _min = c_float()
+        _max = c_float()
+        self.dll.GetScanGainXRange(byref(self._scan_gain_x),byref(_min),byref(_max))
+        return self._scan_gain_x.value
+    
+    @scan_gain_x.setter
+    def scan_gain_x(self,value : float) -> None :
+        min_x = c_float()
+        max_x = c_float()
+        self.dll.GetScanGainXRange(byref(self._scan_gain_x),byref(min_x),byref(max_x))
+        if (self._scan_gain_x.value < max_x) and (self._scan_gain_x > min_x) : 
+            self.dll.SetScanGainX(c_float(value))
+            self.dll.GetScanGainXRange(byref(self._scan_gain_x),byref(min_x),byref(max_x))
+        else :
+            logger.info("The x scan gain can take values between %s and %s. The given x gain input is %s.", min_x.value, max_x.value, self._scan_gain_x)
+
+    @property
+    def scan_gain_y(self) -> float : 
+        _min = c_float()
+        _max = c_float()
+        self.dll.GetScanGainYRange(byref(self._scan_gain_y),byref(_min),byref(_max))
+        return self._scan_gain_y.value
+    
+    @scan_gain_y.setter
+    def scan_gain_y(self,value : float) -> None :
+        min_y = c_float()
+        max_y = c_float()
+        self.dll.GetScanGainYRange(byref(self._scan_gain_y),byref(min_y),byref(max_y))
+        if (self._scan_gain_y.value < max_y) and (self._scan_gain_y > min_y) :
+            self.dll.SetScanGainY(c_float(value))
+            self.dll.GetScanGainYRange(byref(self._scan_gain_y),byref(min_y),byref(max_y))
+        else :
+            logger.info("The y scan gain can take values between %s and %s. The given y gain input is %s.", min_y.value, max_y.value, self._scan_gain_y)
 
     @property
     def scan_profile(self) -> str :
