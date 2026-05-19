@@ -70,19 +70,19 @@ class DAQ_Move_Revolon(DAQ_Move_base):
         
         return pos
 
-    def user_condition_to_reach_target(self) -> bool:
-        """ Implement a condition for exiting the polling mechanism and specifying that the
-        target value has been reached
+    # def user_condition_to_reach_target(self) -> bool:
+    #     """ Implement a condition for exiting the polling mechanism and specifying that the
+    #     target value has been reached
 
-       Returns
-        -------
-        bool: if True, PyMoDAQ considers the target value has been reached
-        """
-        # TODO either delete this method if the usual polling is fine with you, but if need you can
-        #  add here some other condition to be fullfilled either a completely new one or
-        #  using or/and operations between the epsilon_bool and some other custom booleans
-        #  for a usage example see DAQ_Move_brushlessMotor from the Thorlabs plugin
-        return True
+    #    Returns
+    #     -------
+    #     bool: if True, PyMoDAQ considers the target value has been reached
+    #     """
+    #     # TODO either delete this method if the usual polling is fine with you, but if need you can
+    #     #  add here some other condition to be fullfilled either a completely new one or
+    #     #  using or/and operations between the epsilon_bool and some other custom booleans
+    #     #  for a usage example see DAQ_Move_brushlessMotor from the Thorlabs plugin
+    #     return True
 
     def close(self):
         """Terminate the communication protocol"""
@@ -128,12 +128,12 @@ class DAQ_Move_Revolon(DAQ_Move_base):
             False if initialization failed otherwise True
         """
         self.controller = self.ini_stage_init(slave_controller=controller, new_controller=Revolon())  # will be useful when controller is slave
-        if self.is_master : 
+        if self.is_master :
             connect_rc = self.controller.connect()
-        else : 
+        else :
             connect_rc = consts_sc.SUCCESS
             
-        if connect_rc == consts_sc.SUCCESS : 
+        if connect_rc == consts_sc.SUCCESS :
             info = "The DAQ_move Revolon scan engine has successfully started"
             initialized = True
             self.settings.child('bounds', 'is_bounds').setValue(True)
@@ -167,7 +167,7 @@ class DAQ_Move_Revolon(DAQ_Move_base):
             self.emit_status(ThreadCommand('Update_Status', [f'Moved to {px}']))
         if self.axis_name == self.axis_names[1]:
             py = round(self.target_value.value())
-            self.controller.x_position = py
+            self.controller.y_position = py
             self.current_position = DataActuator(data = py)
             self.emit_status(ThreadCommand('Update_Status', [f'Moved to {py}']))
 
@@ -190,7 +190,7 @@ class DAQ_Move_Revolon(DAQ_Move_base):
             self.emit_status(ThreadCommand('Update_Status', [f'Moved to {px}']))
         if self.axis_name == self.axis_names[1]:
             py = round(self.target_value.value())
-            self.controller.x_position = py
+            self.controller.y_position = py
             self.current_position = DataActuator(data = py)
             self.emit_status(ThreadCommand('Update_Status', [f'Moved to {py}']))
 
@@ -203,7 +203,7 @@ class DAQ_Move_Revolon(DAQ_Move_base):
             self.emit_status(ThreadCommand('Update_Status', [f'Moved to {0}']))
         if self.axis_name == self.axis_names[1]:
             py = round(self.target_value.value())
-            self.controller.x_position = 0
+            self.controller.y_position = 0
             self.current_position = DataActuator(data = 0)
             self.emit_status(ThreadCommand('Update_Status', [f'Moved to {0}']))
 

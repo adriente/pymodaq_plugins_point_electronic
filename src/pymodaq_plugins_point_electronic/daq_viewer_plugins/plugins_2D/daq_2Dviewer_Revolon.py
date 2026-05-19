@@ -49,7 +49,7 @@ class DAQ_2DViewer_Revolon(DAQ_Viewer_base):
         {'title': 'Image height', 'name': 'image_height', 'type': 'int', 'value': 512},
         {'title' : 'Dwell time (us)', 'name' : 'dwell_time', 'type' : 'int', 'value' : 10},
         # {'title' : 'Use Roi', 'name' : 'use_roi', 'type' : 'bool', 'value' : False}
-        {'title' : 'Internal scan enabled', 'name' : 'scan_switch_sate', 'type' : 'bool', 'value' : False},
+        {'title' : 'Internal scan enabled', 'name' : 'scan_switch_state', 'type' : 'bool', 'value' : False},
         {'title' : 'Scan Gain X','name' : 'scan_gain_x', 'type' : 'float', 'value' : 1.0},
         {'title' : 'Scan Gain Y','name' : 'scan_gain_y', 'type' : 'float', 'value' : 1.0}
     ]
