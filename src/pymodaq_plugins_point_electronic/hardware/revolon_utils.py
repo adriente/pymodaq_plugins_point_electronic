@@ -69,7 +69,7 @@ def dac_to_pixel(dac_x : c_uint16,
                  dac_increment : int,
                  dac_offset_x : int,
                  dac_offset_y : int,
-                 dac_max_value: int = 65535) : 
+                 dac_max_value: int = 65535) -> tuple[int,int] :
     r"""
     Returns x and y coordinates of a scan in pixels from x and y coordinates in dac unit.
 
@@ -106,7 +106,7 @@ def pixel_to_dac(pixel_x : int,
                  dac_increment : int,
                  dac_offset_x : int,
                  dac_offset_y : int,
-                 dac_max_value : int = 65535) : 
+                 dac_max_value : int = 65535) -> tuple[c_uint16,c_uint16] :
     r"""
     Returns x and y coordinates of a scan in pixels from x and y coordinates in dac unit.
 
@@ -137,14 +137,16 @@ def pixel_to_dac(pixel_x : int,
     return c_uint16(dac_x), c_uint16(dac_y)
 
 
-def within_limits(val, lower=None, upper=None):
+def within_limits(val : int | float,
+                  lower= int | float | None,
+                  upper= int | float | None) -> int | float:
     """ limit a value to be within a minimum and maximum
     """
-    if lower and upper:
+    if lower is not None and upper is not None:
         assert upper > lower, "input range given is impossible"
-    if lower:
+    if lower is not None:
         val = max(lower, val)
-    if upper:
+    if upper is not None:
         val = min(val, upper)
     return val
 

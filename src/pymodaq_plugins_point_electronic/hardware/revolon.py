@@ -160,6 +160,7 @@ class Revolon :
         self._scan_switch_state = c_bool()
         self._scan_gain_x = c_float(1.21)
         self._scan_gain_y = c_float(1.21)
+        self._line_averaging = c_uint16()
 
         # Advanced settings
         self._dac_x_step, self._dac_offset_x, self._dac_offset_y = ru.calculate_dac_increment(
@@ -361,7 +362,12 @@ class Revolon :
         if return_code != sc.SUCCESS:
             sys.exit("SetFrameCount failed! Error code: %08X",return_code)
 
-        self.dll.SetKeepInternalScanEnabled(self.h_scan_job, self._scan_switch_state)
+        return_code = self.dll.SetKeepInternalScanEnabled(self.h_scan_job, self._scan_switch_state)
+        if return_code != sc.SUCCESS:
+            sys.exit("SetKeepInternalScanEnabled failed! Error code: %08X",return_code)
+        return_code = self.dll.SetLineAveragingCount(self.h_scan_job,self._line_averaging)
+        if return_code != sc.SUCCESS:
+            sys.exit("SetLineAveragingCount failed! Error code: %08X",return_code)
 
         for i in range(4):
             self.event_handles[i] = self.dll.SysCreateEvent(False, False)
@@ -375,28 +381,43 @@ class Revolon :
         if return_code != sc.SUCCESS:
             sys.exit("StopScanJob failed! Error code: %08X",return_code)
 
-    def stop_immediately(self) : 
+    def stop_immediately(self) :
         return_code = self.dll.StopScanJob(self.h_scan_job, sc.ABORT_SCAN_IMMEDIATELY)
         if return_code != sc.SUCCESS:
             sys.exit("StopScanJob failed! Error code: %08X",return_code)
+
+    def _get_scan_gain_range(self) -> tuple[float, float, float, float]:
+        min_x = c_float()
+        max_x = c_float()
+        _val_x = c_float()
+        self.dll.GetScanGainXRange(byref(_val_x),byref(min_x),byref(max_x))
+        min_y = c_float()
+        max_y = c_float()
+        _val_y = c_float()
+        self.dll.GetScanGainYRange(byref(_val_y),byref(min_y),byref(max_y))
+        return (min_x.value, max_x.value, min_y.value, max_y.value)
 
     ################
     # Moving probe #
     ################
 
     def _set_dac_x_scan_pos(self, dac_x_val : c_uint16) :
-        self.dll.SetScanOffPosition(dac_x_val, self._dac_y_off_pos)
+        return_code = self.dll.SetScanOffPosition(dac_x_val, self._dac_y_off_pos)
+        if return_code != sc.SUCCESS:
+            logger.warning("SetScanOffPosition from _set_dac_x_scan_pos failed! Error code: %08X",return_code)
 
     def _set_dac_y_scan_pos(self, dac_y_val : c_uint16) :
-        self.dll.SetScanOffPosition(self._dac_x_off_pos, dac_y_val)
+        return_code = self.dll.SetScanOffPosition(self._dac_x_off_pos, dac_y_val)
+        if return_code != sc.SUCCESS:
+            logger.warning("SetScanOffPosition from _set_dac_y_scan_pos failed! Error code: %08X",return_code)
 
-    def _get_dac_scan_pos(self) : 
+    def _get_dac_scan_pos(self) -> tuple[c_uint16,c_uint16] : 
         self.dll.GetScanOffPosition(byref(self._dac_x_off_pos), byref(self._dac_y_off_pos))
         return self._dac_x_off_pos, self._dac_y_off_pos
     
     @property
-    def x_position(self) :
-        dac_x, dac_y = self._get_dac_scan_pos() 
+    def x_position(self) -> int :
+        dac_x, dac_y = self._get_dac_scan_pos()
         self._x_position, _ = ru.dac_to_pixel(dac_x=dac_x,
                                dac_y=dac_y,
                                dac_increment=self._dac_x_step,
@@ -405,7 +426,7 @@ class Revolon :
         return self._x_position
     
     @x_position.setter
-    def x_position(self,value : int) : 
+    def x_position(self,value : int) -> None :
         dac_x, _ = ru.pixel_to_dac(value,
                                        self._y_position,
                                        self._dac_x_step,
@@ -414,8 +435,8 @@ class Revolon :
         self._set_dac_x_scan_pos(dac_x)
 
     @property
-    def y_position(self) :
-        dac_x, dac_y = self._get_dac_scan_pos() 
+    def y_position(self) -> int :
+        dac_x, dac_y = self._get_dac_scan_pos()
         _, self._y_position = ru.dac_to_pixel(dac_x=dac_x,
                                dac_y=dac_y,
                                dac_increment=self._dac_x_step,
@@ -424,7 +445,7 @@ class Revolon :
         return self._y_position
 
     @y_position.setter
-    def y_position(self,value : int) :
+    def y_position(self,value : int) -> None :
         _, dac_y = ru.pixel_to_dac(self._x_position,
                                        value,
                                        self._dac_x_step,
@@ -460,7 +481,9 @@ class Revolon :
         c_val = c_float(value)
         self.dll.GetScanGainXRange(byref(self._scan_gain_x),byref(min_x),byref(max_x))
         if (c_val.value < max_x.value) and (c_val.value > min_x.value) :
-            self.dll.SetScanGainX(c_val)
+            return_code = self.dll.SetScanGainX(c_val)
+            if return_code != sc.SUCCESS:
+                logger.warning("SetScanGainX failed! Error code: %08X",return_code)
             self.dll.GetScanGainXRange(byref(self._scan_gain_x),byref(min_x),byref(max_x))
         else :
             logger.info("The x scan gain can take values between %s and %s. The given x gain input is %s.", min_x.value, max_x.value, self._scan_gain_x.value)
@@ -479,7 +502,9 @@ class Revolon :
         c_val = c_float(value)
         self.dll.GetScanGainYRange(byref(self._scan_gain_y),byref(min_y),byref(max_y))
         if (c_val.value < max_y.value) and (c_val.value > min_y.value) :
-            self.dll.SetScanGainY(c_val)
+            return_code = self.dll.SetScanGainY(c_val)
+            if return_code != sc.SUCCESS:
+                logger.warning("SetScanGainY failed! Error code: %08X",return_code)
             self.dll.GetScanGainYRange(byref(self._scan_gain_y),byref(min_y),byref(max_y))
         else :
             logger.info("The y scan gain can take values between %s and %s. The given y gain input is %s.", min_y.value, max_y.value, self._scan_gain_y.value)
@@ -549,6 +574,33 @@ class Revolon :
     def frame_count(self) -> int :
         self.dll.GetFrameCount(self.h_scan_job,byref(self._frame_count))
         return self._frame_count.value
+    
+    @property
+    def line_averaging(self) -> int :
+        c_val = c_uint16()
+        self.dll.GetLineAveragingCount(self.h_scan_job,byref(c_val))
+        return c_val
+    
+    @line_averaging.setter
+    def line_averaging(self,value : int) -> None :
+        try :
+            assert value in [0,1,2,4,8,16,32,64,128,256]
+            self._line_averaging = c_uint16(value)
+        except AssertionError :
+            pass
+
+    @property
+    def scan_rotation(self) -> float :
+        c_val = c_float()
+        self.dll.GetScanRotationAngle(byref(c_val))
+        return c_val.value
+    
+    @scan_rotation.setter
+    def scan_rotation(self, value : float) -> None :
+        c_val = c_float(value)
+        return_code  = self.dll.SetScanRotationAngle(c_val)
+        if return_code != sc.SUCCESS:
+            logger.warning("SetScanRotationAngle failed! Error code: %08X",return_code)
 
 if __name__ == '__main__' : 
     Revolon = Revolon()

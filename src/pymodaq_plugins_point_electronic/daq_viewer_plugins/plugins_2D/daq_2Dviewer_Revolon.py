@@ -45,22 +45,33 @@ class DAQ_2DViewer_Revolon(DAQ_Viewer_base):
     live_mode_available = True
     callback_signal = QtCore.Signal(int)
     params = comon_parameters + [
-        {'title': 'Image width', 'name': 'image_width', 'type': 'int', 'value': 512},
-        {'title': 'Image height', 'name': 'image_height', 'type': 'int', 'value': 512},
-        {'title' : 'Dwell time (us)', 'name' : 'dwell_time', 'type' : 'int', 'value' : 10},
-        # {'title' : 'Use Roi', 'name' : 'use_roi', 'type' : 'bool', 'value' : False}
-        {'title' : 'Internal scan enabled', 'name' : 'scan_switch_state', 'type' : 'bool', 'value' : False},
-        {'title' : 'Scan Gain X','name' : 'scan_gain_x', 'type' : 'float', 'value' : 1.0},
-        {'title' : 'Scan Gain Y','name' : 'scan_gain_y', 'type' : 'float', 'value' : 1.0}
+        {'title' : 'Scan parameters', 'name' : 'scan_params', 'type' : 'group', 'children' : [
+            {'title': 'Image width', 'name': 'image_width', 'type': 'int', 'value': 512},
+            {'title': 'Image height', 'name': 'image_height', 'type': 'int', 'value': 512},
+            {'title': 'x2:', 'name': 'mult2', 'type': 'bool_push', 'value': False},
+            {'title': '/2:', 'name': 'div2', 'type': 'bool_push', 'value': False},
+            {'title': 'Line averaging:', 'name': 'line_averaging', 'type': 'list','value': 1,'limits' : [0,1,2,4,8,16,32,64,128,256]},
+            {'title' : 'Dwell time (us)', 'name' : 'dwell_time', 'type' : 'int', 'value' : 10},
+            # {'title' : 'Use Roi', 'name' : 'use_roi', 'type' : 'bool', 'value' : False}
+            {'title' : 'Gain intensity', 'name' : 'gain_intensity', 'type' : 'slide', 'limits' : [0.0,100.0]},
+            {'title' : 'Gain aspect ratio', 'name' : 'gain_ar', 'type' : 'slide', 'limits' : [-100.0,100.0]},
+            {'title' : 'Scan rotation', 'name' : 'scan_rotation', 'type' : 'slide', 'limits' : [0.,359.9], 'value' : 0.0}
+        ]},
+        {'title' : 'Internal scan control', 'name' : 'int_scan_control', 'type' : 'group', 'children' : [
+            {'title' : 'Disable internal scan', 'name' : 'scan_switch_state', 'type' : 'bool', 'value' : False},
+            {'title' : 'Internal scan disabled', 'name' : 'scan_switch_led', 'type' : 'led', 'value' : False}
+        ] },
     ]
 
     def ini_attributes(self):
         self.controller : Revolon = None
-
         self.x_axis = None
         self.y_axis = None
         self.roi_select_info : RoiInfo = None
         self.roi_select_viewer_index : int = None
+        self.scan_gain_intensity = 0.0
+        self.scan_gain_aspect_ratio = 0.0
+
 
     def commit_settings(self, param: Parameter):
         """Apply the consequences of a change of value in the detector settings
@@ -76,15 +87,70 @@ class DAQ_2DViewer_Revolon(DAQ_Viewer_base):
         if param.name() == "image_height" :
             self.controller.image_height = param.value()
             self.set_axes()
+        if param.name() == 'mult2' :
+            if param.value():
+                self.mult_img()
+                param.setValue(False)
+        if param.name() == 'div2' :
+            if param.value():
+                self.div_img()
+                param.setValue(False)
+        if param.name() == 'line_averaging' :
+            self.controller.line_averaging = param.value()
         if param.name() == "dwell_time" :
             self.controller.dwell_time = param.value()
         if param.name() == "scan_switch_state" :
             self.controller.scan_switch_state = param.value()
-        if param.name() == "scan_gain_x" :
-            self.controller.scan_gain_x = param.value()
-        if param.name() == "scan_gain_y" :
-            self.controller.scan_gain_y = param.value()
+        if param.name() == "gain_intensity" :
+            self.scan_gain_intensity = param.value()
+            self.set_scan_gain()
+            self.update_gain_aspect_ratio()
+        if param.name() == "gain_ar" :
+            self.scan_gain_aspect_ratio = param.value()
+            self.set_scan_gain()
+        if param.name() == 'scan_rotation' : 
+            self.controller.scan_rotation = param.value()
         #elif ...
+
+    def mult_img(self) -> None :
+        """
+        Multiplies by two the width and height of the image, in pixels.
+        """
+        self.controller.image_width *= 2
+        self.controller.image_height *= 2
+        self.settings.child('scan_params', 'image_width').setValue(self.controller.image_width)
+        self.settings.child('scan_params', 'image_height').setValue(self.controller.image_height)
+        self.set_axes()
+
+    def div_img(self) -> None :
+        """
+        Divides by two the width and height of the image, in pixels.
+        """
+        self.controller.image_width //= 2
+        self.controller.image_height //= 2
+        self.settings.child('scan_params', 'image_width').setValue(self.controller.image_width)
+        self.settings.child('scan_params', 'image_height').setValue(self.controller.image_height)
+        self.set_axes()
+
+    def set_scan_gain(self) -> None :
+        min_x, max_x, min_y, max_y = self.controller._get_scan_gain_range()
+        self.scan_gain_aspect_ratio = ru.within_limits(self.scan_gain_aspect_ratio,
+                                                       lower = -100.0 + self.scan_gain_intensity,
+                                                       upper=100.0 - self.scan_gain_intensity)
+        if self.scan_gain_aspect_ratio >= 0.0 :
+            value_x = (max_x - min_x)*self.scan_gain_intensity/100.0 + min_x
+            value_y = (max_y - min_y)*(self.scan_gain_intensity+self.scan_gain_aspect_ratio)/100.0 + min_y
+        else :
+            value_x = (max_x - min_x)*(self.scan_gain_intensity-self.scan_gain_aspect_ratio)/100.0 + min_x
+            value_y = (max_y - min_y)*self.scan_gain_intensity/100.0 + min_y
+        self.controller.scan_gain_x = value_x
+        self.controller.scan_gain_y = value_y
+
+    def update_gain_aspect_ratio(self) -> None :
+        self.settings.child('scan_params', 'gain_ar').setValue(ru.within_limits(self.scan_gain_aspect_ratio,
+                                                                                lower = -100.0 + self.scan_gain_intensity,
+                                                                                upper=100.0 - self.scan_gain_intensity))
+        self.settings.child('scan_params', 'gain_ar').setLimits([-100.0 + self.scan_gain_intensity,100.0 - self.scan_gain_intensity])
 
     # def roi_select(self, roi_info, ind_viewer = 0):
     #     self.roi_select_info = roi_info
@@ -191,8 +257,10 @@ class DAQ_2DViewer_Revolon(DAQ_Viewer_base):
         return info, initialized
 
     def close(self):
-        """Terminate the communication protocol"""
+        """Gives the control of the internal scan back to the microscope and terminates the communication protocol."""
         if self.is_master :
+            self.controller.scan_switch_state = False
+            self.controller.dll.SetKeepInternalScanEnabled(self.controller.h_scan_job, self.controller._scan_switch_state)
             self.controller.close() 
 
     def stop(self):
