@@ -137,9 +137,9 @@ def pixel_to_dac(pixel_x : int,
     return c_uint16(dac_x), c_uint16(dac_y)
 
 
-def within_limits(val : int | float,
-                  lower= int | float | None,
-                  upper= int | float | None) -> int | float:
+def within_limits(val,
+                  lower = None,
+                  upper = None):
     """ limit a value to be within a minimum and maximum
     """
     if lower is not None and upper is not None:

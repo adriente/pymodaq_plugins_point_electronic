@@ -260,7 +260,8 @@ class DAQ_2DViewer_Revolon(DAQ_Viewer_base):
         """Gives the control of the internal scan back to the microscope and terminates the communication protocol."""
         if self.is_master :
             self.controller.scan_switch_state = False
-            self.controller.dll.SetKeepInternalScanEnabled(self.controller.h_scan_job, self.controller._scan_switch_state)
+            self.controller.start(num_frame=0)
+            self.controller.stop_immediately() 
             self.controller.close() 
 
     def stop(self):
@@ -288,14 +289,15 @@ class DAQ_2DViewer_Revolon(DAQ_Viewer_base):
             --------
             daq_utils.ThreadCommand
         """
-        try:
-
+        try:                
             if kwargs.get('live',False) :
                 # if self.settings['use_roi'] : 
                 #     x_origin, y_origin, x_end, y_end = ru.from_roi_info_to_int_coordinates(self.roi_select_info)
                 #     self.controller.start(num_frame=0, x_start=x_origin, y_start=y_origin, x_end=x_end, y_end=y_end)
                 # else : 
                 self.controller.start(num_frame=0)
+                self.settings.child('int_scan_control',
+                                    'scan_switch_led').setValue(self.controller.scan_switch_state)
                 self.callback_signal.emit(0)
 
             else:
@@ -304,6 +306,8 @@ class DAQ_2DViewer_Revolon(DAQ_Viewer_base):
                 #     self.controller.start(num_frame=1, x_start=x_origin, y_start=y_origin, x_end=x_end, y_end=y_end)
                 # else :
                 self.controller.start(num_frame=Naverage)
+                self.settings.child('int_scan_control',
+                                    'scan_switch_led').setValue(self.controller.scan_switch_state)
                 self.callback_signal.emit(Naverage)  # will trigger the waitfor acquisition
 
         except Exception as e:

@@ -161,6 +161,7 @@ class Revolon :
         self._scan_gain_x = c_float(1.21)
         self._scan_gain_y = c_float(1.21)
         self._line_averaging = c_uint16()
+        
 
         # Advanced settings
         self._dac_x_step, self._dac_offset_x, self._dac_offset_y = ru.calculate_dac_increment(
@@ -597,6 +598,10 @@ class Revolon :
     
     @scan_rotation.setter
     def scan_rotation(self, value : float) -> None :
+        rot_enabled = c_bool()
+        self.dll.GetScanRotationEnabled(byref(rot_enabled))
+        if not rot_enabled.value : 
+            self.dll.SetScanRotationEnabled(c_bool(True))
         c_val = c_float(value)
         return_code  = self.dll.SetScanRotationAngle(c_val)
         if return_code != sc.SUCCESS:
