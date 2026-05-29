@@ -143,8 +143,9 @@ class Revolon :
         python object to call the method of the point electronic dll
     
     """
-    def __init__(self) :
+    def __init__(self, camera_controller = None) :
         self.config = RevolonConfig()
+        self.camera_controller = camera_controller
         self.dll = self.load_dll()
         self._scan_profile = 'basic_scan'
         self.config.load_profile(self.scan_profile)

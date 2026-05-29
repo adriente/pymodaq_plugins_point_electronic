@@ -224,8 +224,8 @@ class DAQ_2DViewer_Revolon(DAQ_Viewer_base):
         initialized: bool
             False if initialization failed otherwise True
         """
-        self.controller = self.ini_detector_init(slave_controller=controller, new_controller= Revolon())
         if self.is_master :
+            self.controller = Revolon()
             connect_rc = self.controller.connect()
 
             if connect_rc == consts_sc.SUCCESS :
@@ -234,14 +234,7 @@ class DAQ_2DViewer_Revolon(DAQ_Viewer_base):
                 info = "The DAQ_viewer Revolon scan engine has successfully started"
                 initialized = True
 
-                self.callback = RevolonCallback(self.controller)
-                self.callback_thread = QtCore.QThread()
-                self.callback.moveToThread(self.callback_thread)
-                self.callback.data_sig.connect(self.emit_data)  # when the wait for acquisition returns (with data taken), emit_data will be fired
-
-                self.callback_signal.connect(self.callback.readout)
-                self.callback_thread.callback = self.callback
-                self.callback_thread.start()
+                
 
             else :
                 info = f"Init failed (return code {connect_rc:08X})!"
@@ -251,7 +244,15 @@ class DAQ_2DViewer_Revolon(DAQ_Viewer_base):
             self.controller = controller
             info = "A slave Revolon has been initialised"
             initialized = True
+            
+        self.callback = RevolonCallback(self.controller)
+        self.callback_thread = QtCore.QThread()
+        self.callback.moveToThread(self.callback_thread)
+        self.callback.data_sig.connect(self.emit_data)  # when the wait for acquisition returns (with data taken), emit_data will be fired
 
+        self.callback_signal.connect(self.callback.readout)
+        self.callback_thread.callback = self.callback
+        self.callback_thread.start()
         self.set_axes()
 
         return info, initialized
