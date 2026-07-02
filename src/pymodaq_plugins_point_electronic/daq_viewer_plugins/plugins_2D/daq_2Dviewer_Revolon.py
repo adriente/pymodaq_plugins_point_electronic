@@ -3,7 +3,7 @@ import numpy as np
 from pymodaq_utils.utils import ThreadCommand
 from pymodaq_data.data import DataToExport, Axis
 from pymodaq_gui.parameter import Parameter
-from pymodaq_gui.plotting.utils.plot_utils import RoiInfo
+# from pymodaq_gui.plotting.utils.plot_utils import RoiInfo
 
 from pymodaq.control_modules.viewer_utility_classes import DAQ_Viewer_base, comon_parameters, main
 from pymodaq.utils.data import DataFromPlugins
@@ -67,7 +67,7 @@ class DAQ_2DViewer_Revolon(DAQ_Viewer_base):
         self.controller : Revolon = None
         self.x_axis = None
         self.y_axis = None
-        self.roi_select_info : RoiInfo = None
+        # self.roi_select_info : RoiInfo = None
         self.roi_select_viewer_index : int = None
         self.scan_gain_intensity = 0.0
         self.scan_gain_aspect_ratio = 0.0

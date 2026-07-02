@@ -52,13 +52,13 @@ def calculate_dac_increment(pixel_length_x : int,
         Value of the frame offset in dac unit
     """
     
-    if pixel_length_y >= pixel_length_x :  
-        dac_increment = min(dac_max_value // (pixel_length_y + prescan_x),
-                            dac_max_value//(pixel_length_y + prescan_y))
+    if pixel_length_y >= pixel_length_x : 
+        dac_increment = min(dac_max_value // (pixel_length_y + 2*prescan_x),
+                            dac_max_value//(pixel_length_y + 2*prescan_y))
 
     else : 
-        dac_increment = min(dac_max_value // (pixel_length_x + prescan_x),
-                            dac_max_value//(pixel_length_x + prescan_y))
+        dac_increment = min(dac_max_value // (pixel_length_x + 2*prescan_x),
+                            dac_max_value//(pixel_length_x + 2*prescan_y))
         
     dac_offset_x, dac_offset_y = prescan_x*dac_increment, prescan_y*dac_increment
         
@@ -95,8 +95,10 @@ def dac_to_pixel(dac_x : c_uint16,
     pixel_y : int
         y position in pixel
     """
-    dac_x_val = within_limits(dac_x.value - dac_offset_x, lower=0, upper=dac_max_value)
-    dac_y_val = within_limits(dac_y.value - dac_offset_y, lower=0, upper=dac_max_value)
+    dac_x_val = within_limits(dac_x.value, lower=dac_offset_x, upper=dac_max_value - dac_offset_x)
+    dac_y_val = within_limits(dac_y.value, lower=dac_offset_y, upper=dac_max_value - dac_offset_y)
+    dac_x_val -= dac_offset_x
+    dac_y_val -= dac_offset_y
     pixel_x = dac_x_val//dac_increment
     pixel_y = dac_y_val//dac_increment
     return pixel_x, pixel_y
@@ -132,8 +134,8 @@ def pixel_to_dac(pixel_x : int,
     dac_y : c_uint16
         y position in dac unit
     """
-    dac_x = within_limits(dac_offset_x + pixel_x*dac_increment, upper = dac_max_value)
-    dac_y = within_limits(dac_offset_y + pixel_y*dac_increment, upper = dac_max_value)
+    dac_x = within_limits(dac_offset_x + pixel_x*dac_increment, lower = dac_offset_x, upper = dac_max_value-dac_offset_x)
+    dac_y = within_limits(dac_offset_y + pixel_y*dac_increment, lower = dac_offset_y, upper = dac_max_value-dac_offset_y)
     return c_uint16(dac_x), c_uint16(dac_y)
 
 
