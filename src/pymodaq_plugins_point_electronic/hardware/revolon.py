@@ -269,6 +269,24 @@ class Revolon :
         data_list = self.build_data_list()
         return status, data_list
     
+    def get_frame_index(self) : 
+        # TODO : make a better readchanneldata function. this is quick fix, that might enter in conflict when using thecheetah3
+        pixel_count = c_uint32(self.image_height*self.image_width)
+        pixel_offset = c_uint32()
+        frame_index = c_uint32()
+        status = c_uint32()
+        return_code = self.dll.ReadChannelData(self.h_scan_job,
+                                               byref(self.scan_frame_buffer_array),
+                                               byref(pixel_count),
+                                               sc.READ_FLAG_USE_PIXEL_OFFSET,
+                                               byref(frame_index),
+                                               byref(pixel_offset),
+                                               byref(status))
+        if return_code != sc.SUCCESS:
+            sys.exit("ReadChannelData failed! Error code: %08X",return_code)
+        # data_list = self.build_data_list()
+        return frame_index.value
+    
     def build_data_list(self) :
         data_list = []
         for i, scan_frame_buffer in enumerate(self.scan_frame_buffers) :
@@ -574,6 +592,7 @@ class Revolon :
         
     @property
     def frame_count(self) -> int :
+        # Not very useful. Gets the set number of frames. It is 0 for endless acquisition.
         self.dll.GetFrameCount(self.h_scan_job,byref(self._frame_count))
         return self._frame_count.value
     

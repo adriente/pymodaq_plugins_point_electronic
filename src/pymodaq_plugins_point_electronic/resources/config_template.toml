@@ -18,7 +18,7 @@ flyback_line_step_time = "10 ns"
 flyback_line_start_delay = "400 us"
 flyback_line_prescan_pixels = 10
 flyback_frame_step_time = "20 ns"
-flyback_frame_prescan_lines = 0
+flyback_frame_prescan_lines = 10
 
 # Channel parameters
 channels = ["a_fast_a","a_fast_b"]
