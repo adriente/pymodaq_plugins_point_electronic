@@ -224,7 +224,7 @@ class Revolon :
         if return_code == sc.SUCCESS :
             logger.info("Successfully unloaded the Revolon scan box.")
         else :
-            logger.info("UnInit failed with return code %08X!",return_code)
+            logger.info("UnInit failed with return code %08X!" % return_code)
 
     ############
     # Scanning #
@@ -251,7 +251,7 @@ class Revolon :
         self.prepare_acquisition(num_frame,x_start,y_start,x_end,y_end)
         return_code = self.dll.StartScanJob(self.h_scan_job, sc.ABORT_SCAN_IMMEDIATELY)
         if return_code != sc.SUCCESS: 
-            sys.exit("StartScanJob failed! Error code: %08X",return_code)
+            sys.exit("StartScanJob failed! Error code: %08X" % return_code)
     
     def read_data(self) :
         pixel_count = c_uint32(self.image_height*self.image_width)
@@ -265,7 +265,7 @@ class Revolon :
                                                byref(pixel_offset),
                                                byref(status))
         if return_code != sc.SUCCESS:
-            sys.exit("ReadChannelData failed! Error code: %08X",return_code)
+            sys.exit("ReadChannelData failed! Error code: %08X" % return_code)
         data_list = self.build_data_list()
         return status, data_list
     
@@ -283,7 +283,7 @@ class Revolon :
                                                byref(pixel_offset),
                                                byref(status))
         if return_code != sc.SUCCESS:
-            sys.exit("ReadChannelData failed! Error code: %08X",return_code)
+            sys.exit("ReadChannelData failed! Error code: %08X" % return_code)
         # data_list = self.build_data_list()
         return frame_index.value
     
@@ -354,7 +354,7 @@ class Revolon :
                                             self.config.flyback_line_prescan_pixels,
                                             self.config.flyback_frame_prescan_lines)
         if return_code != sc.SUCCESS:
-            sys.exit("SetImageGeometry failed! Error code: %08X",return_code)
+            sys.exit("SetImageGeometry failed! Error code: %08X" % return_code)
 
         self.dll.SetPixelClockLength(sc.TIME_SCALE_5S)
         self.dll.SetClockInvertMask(1)
@@ -365,29 +365,29 @@ class Revolon :
                                             self.config.flyback_line_step_time,
                                             self.config.flyback_frame_step_time)
         if return_code != sc.SUCCESS:
-            sys.exit("SetBeamReturnTiming failed! Error code: %08X",return_code)
+            sys.exit("SetBeamReturnTiming failed! Error code: %08X" % return_code)
 
         return_code = self.dll.SetLineStartDelay(self.h_scan_job,
                                           self.config.flyback_line_start_delay)
         if return_code != sc.SUCCESS:
-            sys.exit("SetLineStartDelay failed! Error code: %08X",return_code)
+            sys.exit("SetLineStartDelay failed! Error code: %08X" % return_code)
 
         # Dwell time
         return_code = self.dll.SetAcquisitionTime(self.h_scan_job, self._dwell_time_int)
         if return_code != sc.SUCCESS:
-            sys.exit("SetAcquisitionTime failed! Error code: %08X",return_code)
+            sys.exit("SetAcquisitionTime failed! Error code: %08X" % return_code)
 
         # Frame count
         return_code = self.dll.SetFrameCount(self.h_scan_job, num_frame)
         if return_code != sc.SUCCESS:
-            sys.exit("SetFrameCount failed! Error code: %08X",return_code)
+            sys.exit("SetFrameCount failed! Error code: %08X" % return_code)
 
         return_code = self.dll.SetKeepInternalScanEnabled(self.h_scan_job, self._scan_switch_state)
         if return_code != sc.SUCCESS:
-            sys.exit("SetKeepInternalScanEnabled failed! Error code: %08X",return_code)
+            sys.exit("SetKeepInternalScanEnabled failed! Error code: %08X" % return_code)
         return_code = self.dll.SetLineAveragingCount(self.h_scan_job,self._line_averaging)
         if return_code != sc.SUCCESS:
-            sys.exit("SetLineAveragingCount failed! Error code: %08X",return_code)
+            sys.exit("SetLineAveragingCount failed! Error code: %08X" % return_code)
 
         for i in range(4):
             self.event_handles[i] = self.dll.SysCreateEvent(False, False)
@@ -399,12 +399,12 @@ class Revolon :
     def stop_after_frame(self) :
         return_code = self.dll.StopScanJob(self.h_scan_job, sc.ABORT_SCAN_AFTER_FRAME)
         if return_code != sc.SUCCESS:
-            sys.exit("StopScanJob failed! Error code: %08X",return_code)
+            sys.exit("StopScanJob failed! Error code: %08X" % return_code)
 
     def stop_immediately(self) :
         return_code = self.dll.StopScanJob(self.h_scan_job, sc.ABORT_SCAN_IMMEDIATELY)
         if return_code != sc.SUCCESS:
-            sys.exit("StopScanJob failed! Error code: %08X",return_code)
+            sys.exit("StopScanJob failed! Error code: %08X" % return_code)
 
     def _get_scan_gain_range(self) -> tuple[float, float, float, float]:
         min_x = c_float()
@@ -424,12 +424,12 @@ class Revolon :
     def _set_dac_x_scan_pos(self, dac_x_val : c_uint16) :
         return_code = self.dll.SetScanOffPosition(dac_x_val, self._dac_y_off_pos)
         if return_code != sc.SUCCESS:
-            logger.warning("SetScanOffPosition from _set_dac_x_scan_pos failed! Error code: %08X",return_code)
+            logger.warning("SetScanOffPosition from _set_dac_x_scan_pos failed! Error code: %08X" % return_code)
 
     def _set_dac_y_scan_pos(self, dac_y_val : c_uint16) :
         return_code = self.dll.SetScanOffPosition(self._dac_x_off_pos, dac_y_val)
         if return_code != sc.SUCCESS:
-            logger.warning("SetScanOffPosition from _set_dac_y_scan_pos failed! Error code: %08X",return_code)
+            logger.warning("SetScanOffPosition from _set_dac_y_scan_pos failed! Error code: %08X" % return_code)
 
     def _get_dac_scan_pos(self) -> tuple[c_uint16,c_uint16] : 
         self.dll.GetScanOffPosition(byref(self._dac_x_off_pos), byref(self._dac_y_off_pos))
@@ -503,7 +503,7 @@ class Revolon :
         if (c_val.value < max_x.value) and (c_val.value > min_x.value) :
             return_code = self.dll.SetScanGainX(c_val)
             if return_code != sc.SUCCESS:
-                logger.warning("SetScanGainX failed! Error code: %08X",return_code)
+                logger.warning("SetScanGainX failed! Error code: %08X" % return_code)
             self.dll.GetScanGainXRange(byref(self._scan_gain_x),byref(min_x),byref(max_x))
         else :
             logger.info("The x scan gain can take values between %s and %s. The given x gain input is %s.", min_x.value, max_x.value, self._scan_gain_x.value)
@@ -524,7 +524,7 @@ class Revolon :
         if (c_val.value < max_y.value) and (c_val.value > min_y.value) :
             return_code = self.dll.SetScanGainY(c_val)
             if return_code != sc.SUCCESS:
-                logger.warning("SetScanGainY failed! Error code: %08X",return_code)
+                logger.warning("SetScanGainY failed! Error code: %08X" % return_code)
             self.dll.GetScanGainYRange(byref(self._scan_gain_y),byref(min_y),byref(max_y))
         else :
             logger.info("The y scan gain can take values between %s and %s. The given y gain input is %s.", min_y.value, max_y.value, self._scan_gain_y.value)
@@ -625,7 +625,7 @@ class Revolon :
         c_val = c_float(value)
         return_code  = self.dll.SetScanRotationAngle(c_val)
         if return_code != sc.SUCCESS:
-            logger.warning("SetScanRotationAngle failed! Error code: %08X",return_code)
+            logger.warning("SetScanRotationAngle failed! Error code: %08X" % return_code)
 
 if __name__ == '__main__' : 
     Revolon = Revolon()
